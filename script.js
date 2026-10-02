@@ -14,7 +14,7 @@ updateHeaderOnScroll();
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 const revealTargets = document.querySelectorAll(
-  '.intro-band > *, .section-heading, .service-item, .process-layout > *, .process-step, .feature-image, .feature-copy, .gallery-heading, .gallery-item, .sourcing-band > *, .advice-band > *, .contact-band > *',
+  '.intro-band > *, .section-heading, .service-item, .service-category, .why-grid article, .process-layout > *, .process-step, .feature-image, .feature-copy, .gallery-heading, .gallery-item, .sourcing-band > *, .advice-band > *, .vehicle-search-image, .vehicle-search-copy, .garage-guide, .client-feedback > *, .home-faq-heading, .home-faq-list details, .contact-band > *',
 );
 
 if (!prefersReducedMotion.matches && 'IntersectionObserver' in window) {

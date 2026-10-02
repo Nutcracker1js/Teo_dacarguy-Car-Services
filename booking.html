@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090909">
+  <meta name="description" content="Request a vehicle service booking with Teo_dacarguy Car Services.">
+  <title>Book a Service | Teo_dacarguy Car Services</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="site-shell.js" defer></script>
+  <script src="script.js" defer></script>
+  <script src="booking.js" defer></script>
+</head>
+<body class="consultation-body">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="consultation-header">
+    <a href="index.html" aria-label="Back to Teo_dacarguy Car Services home"><img src="images/logo-trimmed.png" alt="Teo_dacarguy Car Services" width="140" height="55"></a>
+    <span class="consultation-header-label">SERVICE BOOKING</span>
+    <a class="consultation-back" href="consultation.html">Make an Enquiry <span aria-hidden="true">↗</span></a>
+  </header>
+  <main id="main" class="consultation-page">
+    <div class="consultation-wrap">
+      <header class="consultation-heading">
+        <h1>Book a Service</h1>
+        <p>Tell us what you need and when you'd like it handled. We'll contact you to confirm availability and the appointment details.</p>
+      </header>
+
+      <div class="consultation-layout">
+        <form id="booking-form" class="consultation-form" novalidate>
+          <section class="form-section" aria-labelledby="booking-customer-heading">
+            <div class="form-section-heading"><span>01</span><div><p>HOW TO REACH YOU</p><h2 id="booking-customer-heading">Your Details</h2></div></div>
+            <div class="form-grid">
+              <div class="form-field"><label for="booking-name">Full Name <span>*</span></label><input id="booking-name" name="fullName" autocomplete="name" required minlength="2" maxlength="120"></div>
+              <div class="form-field"><label for="booking-phone">Phone Number <span>*</span></label><input id="booking-phone" name="phone" type="tel" autocomplete="tel" required minlength="7" maxlength="32" placeholder="Include country code"></div>
+              <div class="form-field"><label for="booking-whatsapp">WhatsApp Number <span>(optional)</span></label><input id="booking-whatsapp" name="whatsapp" type="tel" autocomplete="tel" maxlength="32"></div>
+            </div>
+          </section>
+
+          <section class="form-section" aria-labelledby="booking-vehicle-heading">
+            <div class="form-section-heading"><span>02</span><div><p>THE VEHICLE</p><h2 id="booking-vehicle-heading">Vehicle Details</h2></div></div>
+            <div class="form-grid">
+              <div class="form-field"><label for="booking-make">Car Make <span>*</span></label><input id="booking-make" name="make" required maxlength="80" placeholder="e.g. Toyota"></div>
+              <div class="form-field"><label for="booking-model">Model <span>*</span></label><input id="booking-model" name="model" required maxlength="80" placeholder="e.g. Camry"></div>
+              <div class="form-field"><label for="booking-year">Year <span>(optional)</span></label><input id="booking-year" name="year" type="number" inputmode="numeric" min="1900" max="2035" placeholder="e.g. 2021"></div>
+              <div class="form-field"><label for="booking-registration">Registration Number <span>(optional)</span></label><input id="booking-registration" name="registration" maxlength="32"></div>
+            </div>
+          </section>
+
+          <section class="form-section" aria-labelledby="booking-service-heading">
+            <div class="form-section-heading"><span>03</span><div><p>WHAT WOULD YOU LIKE DONE?</p><h2 id="booking-service-heading">Service</h2></div></div>
+            <div class="form-field">
+              <label for="booking-service">Select a service <span>*</span></label>
+              <select id="booking-service" name="service" required>
+                <option value="" selected disabled>Select a service</option>
+                <option>Maintenance &amp; Repairs</option>
+                <option>Detailing</option>
+                <option>Car Wrapping</option>
+                <option>Tint / Glass Fortification</option>
+                <option>Upgrades &amp; Modification</option>
+                <option>Registration</option>
+                <option>Tint Permit</option>
+                <option>Other</option>
+              </select>
+            </div>
+          </section>
+
+          <section class="form-section" aria-labelledby="booking-time-heading">
+            <div class="form-section-heading"><span>04</span><div><p>WHEN AND WHERE?</p><h2 id="booking-time-heading">Booking Details</h2></div></div>
+            <div class="form-grid">
+              <div class="form-field"><label for="booking-date">Preferred Date <span>*</span></label><input id="booking-date" name="preferredDate" type="date" required></div>
+              <div class="form-field"><label for="booking-time">Preferred Time <span>(optional)</span></label><input id="booking-time" name="preferredTime" type="time"></div>
+              <div class="form-field">
+                <label for="booking-location">Service Location <span>*</span></label>
+                <select id="booking-location" name="location" required>
+                  <option value="" selected disabled>Select a location option</option>
+                  <option>At our location</option>
+                  <option>Vehicle pickup</option>
+                  <option>Other</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section class="form-section" aria-labelledby="booking-notes-heading">
+            <div class="form-section-heading"><span>05</span><div><p>ANYTHING ELSE WE SHOULD KNOW?</p><h2 id="booking-notes-heading">Additional Details</h2></div></div>
+            <div class="form-field"><label for="booking-details">Tell us about the vehicle or service</label><textarea id="booking-details" name="details" rows="5" maxlength="3000" placeholder="Include symptoms, service preferences or other useful details."></textarea></div>
+          </section>
+
+          <section class="form-section" aria-labelledby="booking-upload-heading">
+            <div class="form-section-heading"><span>06</span><div><p>OPTIONAL</p><h2 id="booking-upload-heading">Upload Photos / Videos</h2></div></div>
+            <label class="upload-zone" for="booking-attachments"><span class="upload-symbol" aria-hidden="true">+</span><strong>Select photos or short videos</strong><span>JPG, PNG, WebP, MP4 or MOV · up to 15 MB each · 6 files maximum</span><input id="booking-attachments" name="attachments" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" multiple></label>
+            <ul class="upload-preview" id="booking-upload-preview" aria-live="polite"></ul>
+            <p class="upload-disclaimer">Preview only: files stay on this device and are not uploaded.</p>
+          </section>
+
+          <p class="form-error" id="booking-form-error" role="alert" hidden></p>
+          <button class="button button-bright consultation-submit" type="submit">Request Booking <span aria-hidden="true">↗</span></button>
+          <p class="demo-notice">Website preview only: booking requests and attachments are not sent or saved yet.</p>
+        </form>
+
+        <aside class="consultation-aside">
+          <p class="section-kicker section-kicker-light">APPOINTMENT REQUEST</p>
+          <h2>Choose a time that works.</h2>
+          <p>Your preferred date and time are a request, not a confirmed appointment. We'll contact you to confirm availability and the details.</p>
+          <ol>
+            <li>Tell us what service you need</li>
+            <li>Choose your preferred date and location</li>
+            <li>Wait for us to confirm the appointment</li>
+          </ol>
+          <a href="https://wa.link/sdnpdi" target="_blank" rel="noopener noreferrer">WhatsApp Us <span aria-hidden="true">↗</span></a>
+          <a href="consultation.html">Just making an enquiry? <span aria-hidden="true">↗</span></a>
+        </aside>
+      </div>
+
+      <section class="request-confirmation" id="booking-confirmation" aria-live="polite" hidden>
+        <span class="confirmation-mark" aria-hidden="true">✓</span>
+        <p class="section-kicker">PREVIEW READY</p>
+        <h2>Booking Request Prepared</h2>
+        <p>Your details are ready, but this website preview has not sent or saved the request. Message us on WhatsApp to confirm service availability and an appointment.</p>
+        <a class="button button-bright" href="https://wa.link/sdnpdi" target="_blank" rel="noopener noreferrer">WhatsApp Us to Confirm <span aria-hidden="true">↗</span></a>
+        <button type="button" class="reset-preview" id="edit-booking">Edit Booking</button>
+      </section>
+    </div>
+  </main>
+  <footer class="consultation-footer"><a href="index.html">← Back to Teo_dacarguy Car Services</a><span>Booking requests are not sent in this preview.</span></footer>
+</body>
+</html>

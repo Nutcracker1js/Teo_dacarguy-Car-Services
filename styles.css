@@ -567,6 +567,107 @@ p {
 .service-item-more {
   background: #f3f2ef;
 }
+.service-category-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid #bcbcbc;
+  border-bottom: 1px solid #bcbcbc;
+}
+.service-category {
+  min-width: 0;
+  padding: 26px 22px 14px 0;
+}
+.service-category + .service-category {
+  padding-left: 22px;
+  border-left: 1px solid #d2d2d2;
+}
+.service-category-number {
+  color: var(--red);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.service-category h3 {
+  min-height: 64px;
+  margin: 14px 0 20px;
+  font: 600 32px/0.95 var(--display);
+  text-transform: uppercase;
+}
+.service-category-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.service-category-list li {
+  border-top: 1px solid #dedede;
+}
+.service-category-list a {
+  min-height: 43px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.service-category-list a span {
+  flex: 0 0 auto;
+  color: var(--red);
+}
+.service-category-list a:hover {
+  color: var(--red);
+}
+.why-section {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(0, 1.25fr);
+  align-items: start;
+  gap: 8%;
+  padding: 84px 12.3%;
+  background: #f1f2f0;
+}
+.why-heading h2 {
+  max-width: 380px;
+  margin: 0;
+  font: 600 clamp(48px, 5.6vw, 70px)/0.86 var(--display);
+  text-transform: uppercase;
+}
+.why-heading h2 em {
+  color: var(--red);
+  font-style: normal;
+}
+.why-heading > p {
+  max-width: 330px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.75;
+}
+.why-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 25px;
+}
+.why-grid article {
+  min-width: 0;
+  padding: 20px 0 22px;
+  border-top: 1px solid #cacaca;
+}
+.why-grid article > span {
+  color: var(--red);
+  font: 600 13px var(--display);
+}
+.why-grid h3 {
+  margin: 13px 0 7px;
+  font: 600 23px/0.95 var(--display);
+  text-transform: uppercase;
+}
+.why-grid p {
+  max-width: 240px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.65;
+}
 .reveal-on-scroll {
   opacity: 0;
   transform: translateY(18px);
@@ -652,6 +753,51 @@ p {
   color: #c6c6c6;
   font-size: 10px;
   line-height: 1.6;
+}
+.home-process .process-layout {
+  display: block;
+}
+.home-process .process-layout > div {
+  max-width: 720px;
+  margin: 0 auto 38px;
+  text-align: center;
+}
+.home-process .process-layout h2 {
+  margin: 0 0 18px;
+  font-size: clamp(46px, 5.3vw, 68px);
+  line-height: 0.9;
+}
+.home-process .process-layout > div > p:not(.section-kicker) {
+  max-width: 470px;
+  margin: 0 auto;
+}
+.home-process .process-steps {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid #ffffff35;
+  border-bottom: 1px solid #ffffff35;
+}
+.home-process .process-steps li {
+  min-height: 160px;
+  display: block;
+  padding: 22px 20px 22px 0;
+  border-bottom: 0;
+}
+.home-process .process-steps li + li {
+  padding-left: 20px;
+  border-left: 1px solid #ffffff35;
+}
+.home-process .process-steps li > span {
+  display: block;
+  margin-bottom: 22px;
+  font-size: 17px;
+}
+.home-process .process-steps h3 {
+  margin-bottom: 9px;
+  font-size: 27px;
+}
+.home-process .process-steps p {
+  max-width: 280px;
+  font-size: 11px;
 }
 .feature-section {
   display: grid;
@@ -816,6 +962,232 @@ p {
   font: 600 20px/0.95 var(--display);
   text-transform: uppercase;
 }
+.home-selected-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: auto;
+  gap: 16px;
+}
+.home-selected-grid .gallery-item {
+  aspect-ratio: 4 / 5;
+}
+.home-selected-grid .gallery-item-feature,
+.home-selected-grid .gallery-item-wide {
+  grid-column: auto;
+}
+.home-selected-grid .gallery-item video {
+  object-fit: contain;
+  background: #111;
+}
+.home-selected-grid .gallery-video figcaption {
+  top: 0;
+  bottom: auto;
+  padding: 15px;
+  background: linear-gradient(#080808bd, transparent);
+}
+.vehicle-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  align-items: stretch;
+  background: #f1f2f0;
+}
+.vehicle-search-image {
+  min-height: 550px;
+  overflow: hidden;
+  background: #191919;
+}
+.vehicle-search-image img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center 56%;
+}
+.vehicle-search-copy {
+  align-self: center;
+  padding: 70px clamp(32px, 7vw, 100px);
+}
+.vehicle-search-copy h2,
+.garage-heading h2,
+.client-feedback h2,
+.home-faq-heading h2 {
+  margin: 0;
+  font: 600 clamp(44px, 5.2vw, 66px)/0.86 var(--display);
+  text-transform: uppercase;
+}
+.vehicle-search-copy h2 em {
+  color: var(--red);
+  font-style: normal;
+}
+.vehicle-search-copy > p,
+.garage-heading > p,
+.client-feedback p,
+.home-faq-heading > p {
+  max-width: 480px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.8;
+}
+.vehicle-search-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 22px 0 25px;
+  padding: 0;
+  list-style: none;
+}
+.vehicle-search-details li {
+  color: #424242;
+  font-size: 9px;
+  font-weight: 700;
+}
+.vehicle-search-details li::before {
+  margin-right: 7px;
+  color: var(--red);
+  content: "+";
+}
+.garage-section {
+  padding: 82px 12.3% 90px;
+  background: #fff;
+}
+.garage-heading {
+  max-width: 570px;
+  margin: 0 auto 35px;
+  text-align: center;
+}
+.garage-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.garage-guide {
+  min-width: 0;
+  padding: 21px 18px 18px 0;
+  border-top: 1px solid #bcbcbc;
+}
+.garage-guide summary {
+  position: relative;
+  padding: 0 25px 15px 0;
+  font: 600 24px/0.95 var(--display);
+  text-transform: uppercase;
+  cursor: pointer;
+  list-style: none;
+}
+.garage-guide summary::-webkit-details-marker {
+  display: none;
+}
+.garage-guide summary::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  color: var(--red);
+  content: "+";
+  font: 400 18px var(--body);
+}
+.garage-guide[open] summary::after {
+  content: "−";
+}
+.garage-guide p {
+  margin: 0 0 15px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.75;
+}
+.garage-guide a,
+.home-faq-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 700;
+}
+.garage-guide a span,
+.home-faq-link span {
+  color: var(--red);
+}
+.garage-guide a:hover,
+.home-faq-link:hover {
+  color: var(--red);
+}
+.client-feedback {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 35px;
+  padding: 58px 12.3%;
+  border-top: 1px solid var(--line);
+  background: #f1f2f0;
+}
+.client-feedback > div {
+  max-width: 620px;
+}
+.client-feedback h2 {
+  font-size: clamp(40px, 4.5vw, 54px);
+}
+.client-feedback p {
+  margin-top: 12px;
+}
+.client-feedback .button-outline {
+  flex: 0 0 auto;
+  border-color: #777;
+  color: var(--ink);
+}
+.home-faq {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.7fr) minmax(0, 1.3fr);
+  align-items: start;
+  column-gap: 9%;
+  padding: 82px 12.3%;
+}
+.home-faq-heading {
+  grid-row: span 2;
+}
+.home-faq-heading h2 {
+  font-size: clamp(44px, 5vw, 60px);
+}
+.home-faq-list {
+  border-top: 1px solid #bcbcbc;
+}
+.home-faq-list details {
+  border-bottom: 1px solid #d6d6d6;
+}
+.home-faq-list summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 17px 0;
+  font: 600 21px/1 var(--display);
+  cursor: pointer;
+  list-style: none;
+}
+.home-faq-list summary::-webkit-details-marker {
+  display: none;
+}
+.home-faq-list summary::after {
+  flex: 0 0 auto;
+  color: var(--red);
+  content: "+";
+  font: 400 16px var(--body);
+}
+.home-faq-list details[open] summary::after {
+  content: "−";
+}
+.home-faq-list details p {
+  max-width: 580px;
+  margin: -3px 0 17px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.75;
+}
+.home-faq-link {
+  grid-column: 2;
+  justify-self: start;
+  margin-top: 19px;
+  border-bottom: 1px solid #aaa;
+  padding-bottom: 6px;
+}
 .sourcing-band {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
@@ -866,7 +1238,7 @@ p {
   justify-content: space-between;
   gap: 20px;
   padding: 53px 12.3%;
-  background: var(--red);
+  background: var(--black);
   color: #fff;
 }
 .contact-band .section-kicker {
@@ -1951,6 +2323,60 @@ p {
     grid-template-columns: 1fr;
     gap: 35px;
   }
+  .home-process .process-steps {
+    grid-template-columns: 1fr;
+  }
+  .home-process .process-steps li,
+  .home-process .process-steps li + li {
+    min-height: 0;
+    padding: 20px 0;
+    border-left: 0;
+    border-bottom: 1px solid #ffffff35;
+  }
+  .home-process .process-steps li:last-child {
+    border-bottom: 0;
+  }
+  .home-process .process-steps li > span {
+    margin-bottom: 12px;
+  }
+  .why-section {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding: 65px 8%;
+  }
+  .vehicle-search {
+    grid-template-columns: 1fr;
+  }
+  .vehicle-search-image {
+    min-height: 430px;
+  }
+  .vehicle-search-copy {
+    padding: 52px 8%;
+  }
+  .garage-section {
+    padding: 66px 8%;
+  }
+  .garage-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .client-feedback {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 22px;
+    padding: 50px 8%;
+  }
+  .home-faq {
+    grid-template-columns: 1fr;
+    row-gap: 22px;
+    padding: 66px 8%;
+  }
+  .home-faq-heading {
+    grid-row: auto;
+  }
+  .home-faq-link {
+    grid-column: auto;
+  }
   .about-process .process-steps {
     grid-template-columns: 1fr;
   }
@@ -2042,17 +2468,7 @@ p {
     max-width: 330px;
   }
   .hero-stamp {
-    top: auto;
-    right: 7%;
-    bottom: 61px;
-    width: 91px;
-    height: 91px;
-  }
-  .hero-stamp b {
-    font-size: 18px;
-  }
-  .hero-stamp span {
-    font-size: 6px;
+    display: none;
   }
   .hero-caption {
     right: 7%;
@@ -2084,6 +2500,78 @@ p {
   }
   .service-grid {
     grid-template-columns: 1fr;
+  }
+  .service-category-grid {
+    grid-template-columns: 1fr;
+  }
+  .service-category,
+  .service-category + .service-category {
+    padding: 21px 0 14px;
+    border-left: 0;
+  }
+  .service-category + .service-category {
+    border-top: 1px solid #d2d2d2;
+  }
+  .service-category h3 {
+    min-height: 0;
+    margin: 12px 0 17px;
+    font-size: 29px;
+  }
+  .why-section {
+    padding: 52px 7%;
+  }
+  .why-grid {
+    column-gap: 17px;
+  }
+  .why-grid h3 {
+    font-size: 20px;
+  }
+  .home-process .process-layout > div {
+    margin-bottom: 26px;
+  }
+  .home-process .process-layout h2 {
+    font-size: 47px;
+  }
+  .gallery-grid.home-selected-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .home-selected-grid .gallery-item {
+    aspect-ratio: 4 / 3;
+  }
+  .home-selected-grid .gallery-video {
+    aspect-ratio: 9 / 16;
+  }
+  .vehicle-search-image {
+    min-height: 330px;
+  }
+  .vehicle-search-copy {
+    padding: 43px 7%;
+  }
+  .garage-section {
+    padding: 54px 7%;
+  }
+  .garage-heading {
+    text-align: left;
+  }
+  .garage-heading h2,
+  .vehicle-search-copy h2 {
+    font-size: 47px;
+  }
+  .client-feedback {
+    padding: 43px 7%;
+  }
+  .client-feedback h2 {
+    font-size: 42px;
+  }
+  .home-faq {
+    padding: 54px 7%;
+  }
+  .home-faq-heading h2 {
+    font-size: 48px;
+  }
+  .home-faq-list summary {
+    font-size: 19px;
   }
   .service-item,
   .service-item:nth-child(odd),

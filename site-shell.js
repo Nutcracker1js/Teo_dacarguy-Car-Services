@@ -51,11 +51,11 @@
             Services <span class="chevron" aria-hidden="true"></span>
           </button>
           <div class="dropdown-menu" id="services-menu" hidden>
-            <a href="services.html#repairs"
+            <a href="services.html#maintenance"
               >Repairs & maintenance <span>01</span></a
             >
             <a href="services.html#parts">Parts sourcing <span>02</span></a>
-            <a href="services.html#cars">Car sourcing <span>03</span></a>
+            <a href="services.html#sales">Car sourcing <span>03</span></a>
             <a href="services.html#imports"
               >Import coordination <span>04</span></a
             >
@@ -65,8 +65,8 @@
         <a class="nav-link" href="about.html">About Us</a>
         <a class="nav-link" href="contact.html">Contact</a>
         <a class="nav-link" href="faq.html">FAQs</a>
-        <a class="button button-nav" href="consultation.html"
-          >Get a consultation <span aria-hidden="true">↗</span></a
+        <a class="button button-nav" href="booking.html"
+          >Book a service <span aria-hidden="true">↗</span></a
         >
       </nav>
     </header>`;
@@ -81,8 +81,8 @@
         <p class="footer-note">We help coordinate repairs, maintenance, parts and vehicle sourcing through one clear point of contact.</p>
         <div class="footer-column"><h2>FIND US</h2><address><a href="https://maps.app.goo.gl/misNQjmHhxAYyMr57?g_st=is" target="_blank" rel="noopener noreferrer">Off 5 Junction, 38 Oro Street<br>Benin City 300282, Edo ↗</a></address></div>
         <div class="footer-column"><h2>SHOP HOURS</h2><p>Mon–Saturday, 8am–7pm<br>Sunday, 12pm–5pm</p></div>
-        <div class="footer-column"><h2>ON THE MENU</h2><a href="services.html">Services</a><a href="index.html#process">How it works</a><a href="projects.html">Our work</a><a href="about.html">About us</a><a href="cars.html">Available cars</a><a href="faq.html">FAQs</a><a href="consultation.html">Get a consultation</a><a href="contact.html">Get in touch</a></div>
-        <div class="footer-column"><h2>CONTACT</h2><a href="https://wa.link/sdnpdi" target="_blank" rel="noopener noreferrer">Message us on WhatsApp ↗</a><a href="contact.html">Contact page</a><a href="consultation.html">Request a consultation</a></div>
+        <div class="footer-column"><h2>ON THE MENU</h2><a href="services.html">Services</a><a href="index.html#process">How it works</a><a href="projects.html">Our work</a><a href="about.html">About us</a><a href="cars.html">Available cars</a><a href="faq.html">FAQs</a><a href="booking.html">Book a Service</a><a href="consultation.html">Make an Enquiry</a><a href="contact.html">Get in touch</a></div>
+        <div class="footer-column"><h2>CONTACT</h2><a href="https://wa.link/sdnpdi" target="_blank" rel="noopener noreferrer">WhatsApp Us ↗</a><a href="contact.html">Contact page</a><a href="consultation.html">Make an Enquiry</a></div>
       </div>
       <div class="footer-bottom"><span>© <span id="year"></span> Teo_dacarguy Car Services.</span><div><a href="index.html#home">Back to top ↑</a>${previewNote}</div></div>
     </footer>`;
