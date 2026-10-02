@@ -40,7 +40,7 @@
       <a class="brand" href="index.html#home" aria-label="Teo_dacarguy Car Services home"><img class="brand-logo" src="images/logo-trimmed.png" alt="" width="200" height="78"></a>
       <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation" aria-label="Open navigation"><span></span><span></span></button>
       <nav class="primary-navigation" id="primary-navigation" aria-label="Main navigation">
-          <a class="nav-link current" href="#home">Home</a>
+          <a class="nav-link current" href="${isPage ? "index.html#home" : "#home"}">Home</a>
         <div class="nav-dropdown">
           <button
             class="nav-link dropdown-trigger"
@@ -78,10 +78,11 @@
     <footer class="site-footer">
       <div class="footer-main">
         <a class="brand brand-footer" href="index.html#home" aria-label="Teo_dacarguy Car Services, back to top"><img class="brand-logo" src="images/logo-trimmed.png" alt="" width="200" height="78"></a>
-        <p class="footer-note">You have the car problem.<br>We handle the rest.</p>
+        <p class="footer-note">We help coordinate repairs, maintenance, parts and vehicle sourcing through one clear point of contact.</p>
         <div class="footer-column"><h2>FIND US</h2><address><a href="https://maps.app.goo.gl/misNQjmHhxAYyMr57?g_st=is" target="_blank" rel="noopener noreferrer">Off 5 Junction, 38 Oro Street<br>Benin City 300282, Edo ↗</a></address></div>
-        <div class="footer-column"><h2>SHOP HOURS</h2><p>Mon–Fri, 8am–6pm<br>Saturday, 9am–2pm</p></div>
-        <div class="footer-column"><h2>ON THE MENU</h2><a href="services.html">Services</a><a href="index.html#process">How it works</a><a href="projects.html">Our work</a><a href="cars.html">Available cars</a><a href="faq.html">FAQs</a><a href="consultation.html">Get a consultation</a><a href="contact.html">Get in touch</a></div>
+        <div class="footer-column"><h2>SHOP HOURS</h2><p>Mon–Saturday, 8am–7pm<br>Sunday, 12pm–5pm</p></div>
+        <div class="footer-column"><h2>ON THE MENU</h2><a href="services.html">Services</a><a href="index.html#process">How it works</a><a href="projects.html">Our work</a><a href="about.html">About us</a><a href="cars.html">Available cars</a><a href="faq.html">FAQs</a><a href="consultation.html">Get a consultation</a><a href="contact.html">Get in touch</a></div>
+        <div class="footer-column"><h2>CONTACT</h2><a href="https://wa.link/sdnpdi" target="_blank" rel="noopener noreferrer">Message us on WhatsApp ↗</a><a href="contact.html">Contact page</a><a href="consultation.html">Request a consultation</a></div>
       </div>
       <div class="footer-bottom"><span>© <span id="year"></span> Teo_dacarguy Car Services.</span><div><a href="index.html#home">Back to top ↑</a>${previewNote}</div></div>
     </footer>`;
@@ -99,10 +100,13 @@
   const currentPage = decodeURIComponent((window.location.pathname || "").split("/").pop() || "index.html");
   const navLinks = document.querySelectorAll(".nav-link");
   navLinks.forEach((link) => {
+    if (link.classList.contains("dropdown-trigger")) {
+      link.classList.toggle("current", currentPage === "services.html");
+      return;
+    }
     const href = (link.getAttribute("href") || "").split("#")[0] || "";
     const normalized = href === "" ? "index.html" : (href.split("/").pop() || "index.html");
-    const isCurrent = normalized === currentPage || (normalized === "index.html" && currentPage === "index.html");
-    link.classList.toggle("current", isCurrent);
+    link.classList.toggle("current", normalized === currentPage);
   });
 
   const oldFooter = document.querySelector(".site-footer, .subpage-footer, .consultation-footer");
