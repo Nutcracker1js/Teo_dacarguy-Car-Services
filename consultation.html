@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#090909">
-  <meta name="description" content="Tell Teo what your vehicle needs and get a clear next step.">
-  <title>Get a consultation | Teo_dacarguy Car Services</title>
+  <meta name="description" content="Have a question or need help with something automotive? Send Teo an enquiry.">
+  <title>Make an Enquiry | Teo_dacarguy Car Services</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -18,21 +18,21 @@
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="consultation-header">
     <a href="index.html" aria-label="Back to Teo_dacarguy Car Services home"><img src="images/logo-trimmed.png" alt="Teo_dacarguy Car Services" width="140" height="55"></a>
-    <span class="consultation-header-label">YOUR CAR. OUR JOB.</span>
-    <a class="consultation-back" href="index.html">Back to website <span aria-hidden="true">↗</span></a>
+    <span class="consultation-header-label">A SIMPLE FIRST STEP</span>
+    <a class="consultation-back" href="booking.html">Book a Service <span aria-hidden="true">↗</span></a>
   </header>
   <main id="main" class="consultation-page">
     <div class="consultation-wrap">
       <header class="consultation-heading">
     
-        <h1>Tell us what<br><em>your car needs.</em></h1>
-        <p>Share a few details. Teo will review your request and follow up using your preferred contact method.</p>
+        <h1>Make an Enquiry</h1>
+        <p>Have a question or need help with something automotive? Tell us what you need.</p>
       </header>
 
       <div class="consultation-layout">
         <form id="consultation-form" class="consultation-form" novalidate>
           <section class="form-section" aria-labelledby="customer-heading">
-            <div class="form-section-heading"><span>01</span><div><p>FIRST, A WAY TO REACH YOU</p><h2 id="customer-heading">Your contact details</h2></div></div>
+            <div class="form-section-heading"><span>01</span><div><p>HOW TO REACH YOU</p><h2 id="customer-heading">Your Details</h2></div></div>
             <div class="form-grid">
               <div class="form-field"><label for="fullName">Full name <span>*</span></label><input id="fullName" name="fullName" autocomplete="name" required minlength="2" maxlength="120"></div>
               <div class="form-field"><label for="phone">Phone number <span>*</span></label><input id="phone" name="phone" type="tel" autocomplete="tel" required minlength="7" maxlength="32" placeholder="Include country code"></div>
@@ -41,75 +41,66 @@
             </div>
           </section>
 
-          <section class="form-section" aria-labelledby="vehicle-heading">
-            <div class="form-section-heading"><span>02</span><div><p>A LITTLE ABOUT THE VEHICLE</p><h2 id="vehicle-heading">Vehicle information</h2></div></div>
-            <div class="form-grid">
-              <div class="form-field"><label for="make">Make</label><input id="make" name="make" maxlength="80" placeholder="e.g. Toyota"></div>
-              <div class="form-field"><label for="model">Model</label><input id="model" name="model" maxlength="80" placeholder="e.g. Camry"></div>
-              <div class="form-field"><label for="year">Year</label><input id="year" name="year" type="number" inputmode="numeric" min="1900" max="2035" placeholder="e.g. 2021"></div>
-              <div class="form-field"><label for="registration">Registration number</label><input id="registration" name="registration" maxlength="32"></div>
-              <div class="form-field"><label for="mileage">Mileage <span>(optional)</span></label><input id="mileage" name="mileage" type="number" inputmode="numeric" min="0"></div>
-            </div>
-          </section>
-
           <section class="form-section" aria-labelledby="type-heading">
-            <div class="form-section-heading"><span>03</span><div><p>CHOOSE THE CLOSEST MATCH</p><h2 id="type-heading">What do you need?</h2></div></div>
-            <div class="request-type-grid">
-              <label><input type="radio" name="requestType" value="REPAIR" required><span>Repair</span></label>
-              <label><input type="radio" name="requestType" value="DIAGNOSIS"><span>Diagnosis</span></label>
-              <label><input type="radio" name="requestType" value="MAINTENANCE"><span>Maintenance</span></label>
-              <label><input type="radio" name="requestType" value="SPARE_PART"><span>Spare part</span></label>
-              <label><input type="radio" name="requestType" value="CAR_SOURCING"><span>Find a car</span></label>
-              <label><input type="radio" name="requestType" value="CAR_IMPORTATION"><span>Car import</span></label>
-              <label><input type="radio" name="requestType" value="VEHICLE_INSPECTION"><span>Vehicle inspection</span></label>
-              <label><input type="radio" name="requestType" value="CAR_SALE"><span>Car sale</span></label>
-              <label><input type="radio" name="requestType" value="OTHER"><span>Something else</span></label>
+            <div class="form-section-heading"><span>02</span><div><p>CHOOSE THE CLOSEST MATCH</p><h2 id="type-heading">What can we help you with?</h2></div></div>
+            <div class="form-field">
+              <label for="enquiry-type">Enquiry type <span>*</span></label>
+              <select id="enquiry-type" name="enquiryType" required>
+                <option value="" selected disabled>Select an enquiry type</option>
+                <option>General Enquiry</option>
+                <option>Maintenance &amp; Repairs</option>
+                <option>Car Sales / Sourcing</option>
+                <option>Car Preorder</option>
+                <option>Parts</option>
+                <option>Tint / Glass Fortification</option>
+                <option>Car Wrapping</option>
+                <option>Registration / Tint Permit</option>
+                <option>Detailing</option>
+                <option>Upgrades &amp; Modification</option>
+                <option>Other</option>
+              </select>
             </div>
           </section>
 
           <section class="form-section" aria-labelledby="description-heading">
-            <div class="form-section-heading"><span>04</span><div><p>THE MORE CONTEXT, THE BETTER</p><h2 id="description-heading">Tell us about it</h2></div></div>
-            <div class="form-field"><label for="description">What’s happening or what are you looking for? <span>*</span></label><textarea id="description" name="description" required minlength="10" maxlength="5000" rows="6" placeholder="Share symptoms, part details, a vehicle you have in mind, or anything else Teo should know."></textarea></div>
+            <div class="form-section-heading"><span>03</span><div><p>A FEW MORE DETAILS</p><h2 id="description-heading">Your Message</h2></div></div>
+            <div class="form-field"><label for="description">Tell us a little more about what you need <span>*</span></label><textarea id="description" name="description" required minlength="5" maxlength="3000" rows="4" placeholder="What would you like help with?"></textarea></div>
+          </section>
+
+          <section class="form-section" aria-labelledby="vehicle-heading">
+            <div class="form-section-heading"><span>04</span><div><p>OPTIONAL</p><h2 id="vehicle-heading">Vehicle Details</h2></div></div>
+            <div class="form-grid">
+              <div class="form-field"><label for="make">Make</label><input id="make" name="make" maxlength="80" placeholder="e.g. Toyota"></div>
+              <div class="form-field"><label for="model">Model</label><input id="model" name="model" maxlength="80" placeholder="e.g. Camry"></div>
+              <div class="form-field"><label for="year">Year</label><input id="year" name="year" type="number" inputmode="numeric" min="1900" max="2035" placeholder="e.g. 2021"></div>
+            </div>
           </section>
 
           <section class="form-section" aria-labelledby="upload-heading">
-            <div class="form-section-heading"><span>05</span><div><p>ADD ANYTHING THAT HELPS</p><h2 id="upload-heading">Photos or documents</h2></div></div>
-            <label class="upload-zone" for="attachments"><span class="upload-symbol" aria-hidden="true">+</span><strong>Select images, short videos or documents</strong><span>JPG, PNG, WebP, MP4, MOV or PDF · up to 15 MB each · 8 files maximum</span><input id="attachments" name="attachments" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,application/pdf" multiple></label>
+            <div class="form-section-heading"><span>05</span><div><p>OPTIONAL</p><h2 id="upload-heading">Upload Photos / Videos</h2></div></div>
+            <label class="upload-zone" for="attachments"><span class="upload-symbol" aria-hidden="true">+</span><strong>Select images or short videos</strong><span>JPG, PNG, WebP, MP4 or MOV · up to 15 MB each · 6 files maximum</span><input id="attachments" name="attachments" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" multiple></label>
             <ul class="upload-preview" id="upload-preview" aria-live="polite"></ul>
             <p class="upload-disclaimer">Preview only: files stay on this device and are not uploaded.</p>
           </section>
 
-          <section class="form-section" aria-labelledby="followup-heading">
-            <div class="form-section-heading"><span>06</span><div><p>HOW WOULD YOU LIKE A REPLY?</p><h2 id="followup-heading">Preferred follow-up</h2></div></div>
-            <fieldset class="form-field"><legend>Contact method <span>*</span></legend><div class="contact-choice-grid"><label><input type="radio" name="contactMethod" value="WHATSAPP" required><span>WhatsApp</span></label><label><input type="radio" name="contactMethod" value="PHONE"><span>Phone call</span></label><label><input type="radio" name="contactMethod" value="EMAIL"><span>Email</span></label></div></fieldset>
-            <div class="form-field appointment-field"><label for="preferredAt">Preferred date and time <span>(optional)</span></label><input id="preferredAt" name="preferredAt" type="datetime-local"></div>
-          </section>
-
-          <section class="form-section review-section" aria-labelledby="review-heading">
-            <div class="form-section-heading"><span>07</span><div><p>BEFORE YOU FINISH</p><h2 id="review-heading">Your information</h2></div></div>
-            <p>Teo uses these details to understand your request and plan a response. This frontend preview does not transmit or save personal information.</p>
-            <label class="consent-check"><input type="checkbox" id="privacyConsent" required><span>I understand this is a website preview and my request will not be sent yet. <b>*</b></span></label>
-          </section>
-
           <p class="form-error" id="form-error" role="alert" hidden></p>
-          <button class="button button-bright consultation-submit" type="submit">Preview consultation request <span aria-hidden="true">↗</span></button>
-          <p class="demo-notice">Frontend preview only. Request delivery, secure uploads and reference tracking activate after a private backend is connected.</p>
+          <button class="button button-bright consultation-submit" type="submit">Send Enquiry <span aria-hidden="true">↗</span></button>
+          <p class="demo-notice">Website preview only: enquiries and attachments are not sent or saved yet.</p>
         </form>
 
-        <aside class="consultation-aside"><p class="section-kicker section-kicker-light">ONE STEP AT A TIME</p><h2>No pressure.<br>No surprises.</h2><p>Teo reviews your request, checks the options and shares a quote before you approve.</p><ol><li>Tell us what you need</li><li>Review the options and quote</li><li>Approve before work starts</li></ol><a href="https://wa.link/sdnpdi" target="_blank" rel="noopener noreferrer">Prefer WhatsApp? Message Teo <span aria-hidden="true">↗</span></a></aside>
+        <aside class="consultation-aside"><p class="section-kicker section-kicker-light">NO COMMITMENT</p><h2>Not sure yet?<br />That’s okay.</h2><p>Choose the closest enquiry type and tell us what you know so far. We can help you work out the next step.</p><a href="https://wa.link/sdnpdi" target="_blank" rel="noopener noreferrer">WhatsApp Us <span aria-hidden="true">↗</span></a><a href="booking.html">Ready to arrange a service? <span aria-hidden="true">↗</span></a></aside>
       </div>
 
       <section class="request-confirmation" id="request-confirmation" aria-live="polite" hidden>
         <span class="confirmation-mark" aria-hidden="true">✓</span>
         <p class="section-kicker">PREVIEW READY</p>
-        <h2>Your request is ready for review.</h2>
-        <p class="confirmation-ref">Preview reference <strong id="preview-reference"></strong></p>
-        <p>No information has been transmitted or stored. Connect the secure request service before accepting real customer enquiries.</p>
-        <a class="button button-bright" href="https://wa.link/sdnpdi" target="_blank" rel="noopener noreferrer">Continue on WhatsApp <span aria-hidden="true">↗</span></a>
-        <button type="button" class="reset-preview" id="reset-preview">Edit request</button>
+        <h2>Enquiry Received</h2>
+        <p>Thanks for reaching out. This website preview has not sent your enquiry to Teo. Message us on WhatsApp so we can get back to you.</p>
+        <a class="button button-bright" href="https://wa.link/sdnpdi" target="_blank" rel="noopener noreferrer">WhatsApp Us <span aria-hidden="true">↗</span></a>
+        <button type="button" class="reset-preview" id="reset-preview">Edit enquiry</button>
       </section>
     </div>
   </main>
-  <footer class="consultation-footer"><a href="index.html">← Back to Teo_dacarguy Car Services</a><span>Customer details stay on this device in preview mode.</span></footer>
+  <footer class="consultation-footer"><a href="index.html">← Back to Teo_dacarguy Car Services</a><span>Enquiries stay on this device in preview mode.</span></footer>
 </body>
 </html>
