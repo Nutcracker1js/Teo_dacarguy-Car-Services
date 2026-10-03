@@ -1,3 +1,25 @@
+const preloader = document.querySelector('.site-preloader');
+
+if (preloader) {
+  const preloaderStartedAt = performance.now();
+  let preloaderClosing = false;
+
+  function closePreloader() {
+    if (preloaderClosing) return;
+    preloaderClosing = true;
+    const minimumDisplay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 120 : 520;
+    const remaining = Math.max(0, minimumDisplay - (performance.now() - preloaderStartedAt));
+    window.setTimeout(() => {
+      preloader.classList.add('is-hidden');
+      window.setTimeout(() => preloader.remove(), 500);
+    }, remaining);
+  }
+
+  if (document.readyState !== 'loading') closePreloader();
+  else document.addEventListener('DOMContentLoaded', closePreloader, { once: true });
+  window.setTimeout(closePreloader, 5000);
+}
+
 const menuToggle = document.querySelector('.menu-toggle');
 const primaryNavigation = document.querySelector('.primary-navigation');
 const dropdownTrigger = document.querySelector('.dropdown-trigger');
@@ -81,3 +103,160 @@ window.addEventListener('resize', () => {
 });
 
 document.querySelector('#year').textContent = new Date().getFullYear();
+
+const enquiryForm = document.querySelector('#consultation-form');
+
+if (enquiryForm) {
+  const enquiryFileInput = document.querySelector('#attachments');
+  const enquiryPreviewList = document.querySelector('#upload-preview');
+  const enquiryError = document.querySelector('#form-error');
+  const enquiryLayout = document.querySelector('.consultation-layout');
+  const enquiryConfirmation = document.querySelector('#request-confirmation');
+  const resetEnquiry = document.querySelector('#reset-preview');
+  const enquiryType = document.querySelector('#enquiry-type');
+  const selectedEnquiryFiles = [];
+
+  const enquiryTypes = {
+    MAINTENANCE: 'Maintenance & Repairs',
+    CAR_SOURCING: 'Car Sales / Sourcing',
+    CAR_SALE: 'Car Sales / Sourcing',
+    CAR_IMPORTATION: 'Car Sales / Sourcing',
+    SPARE_PART: 'Parts',
+    VEHICLE_INSPECTION: 'General Enquiry',
+    OTHER: 'Other',
+  };
+  const requestedType = new URLSearchParams(window.location.search).get('type');
+  if (enquiryTypes[requestedType]) enquiryType.value = enquiryTypes[requestedType];
+
+  function renderEnquiryFiles() {
+    enquiryPreviewList.replaceChildren();
+    selectedEnquiryFiles.forEach((file, index) => {
+      const item = document.createElement('li');
+      item.className = 'upload-preview-item';
+      const title = document.createElement('span');
+      title.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB`;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'remove-upload';
+      remove.setAttribute('aria-label', `Remove ${file.name}`);
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => {
+        selectedEnquiryFiles.splice(index, 1);
+        renderEnquiryFiles();
+      });
+      item.append(title, remove);
+      enquiryPreviewList.append(item);
+    });
+  }
+
+  enquiryFileInput.addEventListener('change', () => {
+    enquiryError.hidden = true;
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime']);
+    const newFiles = Array.from(enquiryFileInput.files || []);
+    const invalid = newFiles.find((file) => !allowedTypes.has(file.type) || file.size > 15 * 1024 * 1024);
+    if (invalid) {
+      enquiryError.textContent = 'Choose JPG, PNG, WebP, MP4 or MOV files up to 15 MB each.';
+      enquiryError.hidden = false;
+      enquiryFileInput.value = '';
+      return;
+    }
+    if (selectedEnquiryFiles.length + newFiles.length > 6) {
+      enquiryError.textContent = 'You can add up to 6 files.';
+      enquiryError.hidden = false;
+      enquiryFileInput.value = '';
+      return;
+    }
+    selectedEnquiryFiles.push(...newFiles);
+    renderEnquiryFiles();
+    enquiryFileInput.value = '';
+  });
+
+  enquiryForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    enquiryError.hidden = true;
+    if (!enquiryForm.reportValidity()) return;
+    enquiryLayout.hidden = true;
+    enquiryConfirmation.hidden = false;
+    enquiryConfirmation.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  resetEnquiry.addEventListener('click', () => {
+    enquiryConfirmation.hidden = true;
+    enquiryLayout.hidden = false;
+    enquiryForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
+const bookingForm = document.querySelector('#booking-form');
+
+if (bookingForm) {
+  const bookingLayout = document.querySelector('.consultation-layout');
+  const bookingDate = document.querySelector('#booking-date');
+  const bookingFiles = document.querySelector('#booking-attachments');
+  const bookingPreviews = document.querySelector('#booking-upload-preview');
+  const bookingError = document.querySelector('#booking-form-error');
+  const bookingConfirmation = document.querySelector('#booking-confirmation');
+  const editBooking = document.querySelector('#edit-booking');
+  const selectedBookingFiles = [];
+
+  const today = new Date();
+  bookingDate.min = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-');
+
+  function renderBookingFiles() {
+    bookingPreviews.replaceChildren();
+    selectedBookingFiles.forEach((file, index) => {
+      const item = document.createElement('li');
+      item.className = 'upload-preview-item';
+      const title = document.createElement('span');
+      title.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB`;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'remove-upload';
+      remove.setAttribute('aria-label', `Remove ${file.name}`);
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => {
+        selectedBookingFiles.splice(index, 1);
+        renderBookingFiles();
+      });
+      item.append(title, remove);
+      bookingPreviews.append(item);
+    });
+  }
+
+  bookingFiles.addEventListener('change', () => {
+    bookingError.hidden = true;
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime']);
+    const newFiles = Array.from(bookingFiles.files || []);
+    const invalid = newFiles.find((file) => !allowedTypes.has(file.type) || file.size > 15 * 1024 * 1024);
+    if (invalid) {
+      bookingError.textContent = 'Choose JPG, PNG, WebP, MP4 or MOV files up to 15 MB each.';
+      bookingError.hidden = false;
+      bookingFiles.value = '';
+      return;
+    }
+    if (selectedBookingFiles.length + newFiles.length > 6) {
+      bookingError.textContent = 'You can add up to 6 files.';
+      bookingError.hidden = false;
+      bookingFiles.value = '';
+      return;
+    }
+    selectedBookingFiles.push(...newFiles);
+    renderBookingFiles();
+    bookingFiles.value = '';
+  });
+
+  bookingForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    bookingError.hidden = true;
+    if (!bookingForm.reportValidity()) return;
+    bookingLayout.hidden = true;
+    bookingConfirmation.hidden = false;
+    bookingConfirmation.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  editBooking.addEventListener('click', () => {
+    bookingConfirmation.hidden = true;
+    bookingLayout.hidden = false;
+    bookingForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
