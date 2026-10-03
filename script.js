@@ -197,10 +197,39 @@ if (bookingForm) {
   const bookingError = document.querySelector('#booking-form-error');
   const bookingConfirmation = document.querySelector('#booking-confirmation');
   const editBooking = document.querySelector('#edit-booking');
+  const bookingService = document.querySelector('#booking-service');
+  const bookingLocation = document.querySelector('#booking-location');
+  const serviceOtherField = document.querySelector('#booking-service-other');
+  const serviceOtherInput = document.querySelector('#booking-service-specify');
+  const locationOtherField = document.querySelector('#booking-location-other');
+  const locationOtherInput = document.querySelector('#booking-location-specify');
   const selectedBookingFiles = [];
 
   const today = new Date();
   bookingDate.min = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-');
+
+  const yearOptions = document.querySelector('#booking-year-options');
+  const currentYear = today.getFullYear();
+  for (let year = currentYear + 1; year >= 1950; year -= 1) {
+    const option = document.createElement('option');
+    option.value = String(year);
+    yearOptions.append(option);
+  }
+
+  function bindOtherDetails(select, field, input) {
+    const updateField = () => {
+      const isOther = select.value === 'OTHER';
+      field.hidden = !isOther;
+      input.disabled = !isOther;
+      input.required = isOther;
+      if (!isOther) input.value = '';
+    };
+    select.addEventListener('change', updateField);
+    updateField();
+  }
+
+  bindOtherDetails(bookingService, serviceOtherField, serviceOtherInput);
+  bindOtherDetails(bookingLocation, locationOtherField, locationOtherInput);
 
   function renderBookingFiles() {
     bookingPreviews.replaceChildren();
