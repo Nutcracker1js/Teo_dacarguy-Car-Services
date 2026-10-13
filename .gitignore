@@ -1,0 +1,16 @@
+node_modules/
+.env
+coverage/
+npm-debug.log*
+dist/
+private-uploads/
+teo-dacarguy-private-uploads/
+
+# Generated build files
+dist/
+
+# Large video files
+*.MOV
+*.mov
+*.MP4
+*.mp4

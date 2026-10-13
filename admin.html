@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="api-base-url" content="" />
+    <meta name="description" content="Private booking management for Teo_dacarguy Car Services." />
+    <title>Booking Management | Teo_dacarguy Car Services</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="admin.css" />
+    <script src="admin.js" defer></script>
+  </head>
+  <body class="admin-page">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="admin-header">
+      <a class="brand" href="index.html" aria-label="Teo_dacarguy Car Services home">
+        <img class="brand-logo" src="images/logo-trimmed.png" alt="" width="200" height="78" />
+      </a>
+      <a class="admin-home-link" href="index.html">View public website</a>
+    </header>
+    <main id="main" class="admin-wrap">
+      <header class="admin-heading">
+        <p class="section-kicker">STAFF ONLY · BOOKING OPERATIONS</p>
+        <h1>Booking centre</h1>
+        <p>Review each request, track payment separately, then approve the appointment when you are ready.</p>
+      </header>
+
+      <p class="admin-message" id="admin-message" role="alert" hidden></p>
+      <form class="admin-login" id="admin-login">
+        <h2>Sign in</h2>
+        <p>Use the admin credentials configured on the API server. Access requires HTTPS outside local development.</p>
+        <label for="admin-username">Username</label>
+        <input id="admin-username" name="username" autocomplete="username" required maxlength="120" />
+        <label for="admin-password">Password</label>
+        <input id="admin-password" name="password" type="password" autocomplete="current-password" required />
+        <button class="button button-bright" type="submit">Open booking centre</button>
+      </form>
+
+      <section class="admin-inbox" id="admin-inbox" hidden aria-label="Booking management">
+        <aside class="admin-sidebar">
+          <p class="admin-sidebar-title">WORKSPACE</p>
+          <nav class="admin-nav" aria-label="Booking management sections">
+            <button type="button" data-panel="dashboard-panel" class="is-active" aria-current="page">Dashboard</button>
+            <button type="button" data-panel="bookings-panel">Bookings</button>
+            <button type="button" data-panel="calendar-panel">Availability &amp; calendar</button>
+            <button type="button" data-panel="payments-panel">Payments &amp; refunds</button>
+            <button type="button" data-panel="customers-panel">Customers</button>
+            <button type="button" data-panel="reviews-panel">Customer reviews</button>
+          </nav>
+          <button class="admin-logout" id="admin-logout" type="button">Sign out</button>
+        </aside>
+
+        <div class="admin-content">
+          <section id="dashboard-panel" class="admin-panel" aria-labelledby="dashboard-heading">
+            <div class="admin-panel-heading">
+              <div><p class="section-kicker">OVERVIEW</p><h2 id="dashboard-heading">Good day, Teo</h2></div>
+              <button class="admin-refresh" type="button" data-refresh>Refresh</button>
+            </div>
+            <div class="admin-metrics">
+              <article class="admin-metric"><span>New requests</span><strong id="metric-review">—</strong><small>Awaiting review</small></article>
+              <article class="admin-metric"><span>Awaiting payment</span><strong id="metric-payment">—</strong><small>Accepted requests</small></article>
+              <article class="admin-metric"><span>Awaiting approval</span><strong id="metric-approval">—</strong><small>Payment is not approval</small></article>
+              <article class="admin-metric"><span>Payments verified</span><strong id="metric-verified">—</strong><small>Recorded as verified</small></article>
+            </div>
+            <div class="admin-metric admin-upcoming-metric"><span>Upcoming appointments</span><strong id="metric-upcoming">—</strong><small>Approved bookings</small></div>
+            <div class="admin-setup-alert" id="availability-setup-alert" hidden>
+              <strong>Standard booking hours are active.</strong>
+              <span>Customers can choose Mon–Sat, 8:00 AM–7:00 PM times. Customize weekly hours and service durations here.</span>
+              <button type="button" class="admin-text-button" data-open-panel="calendar-panel">Set up availability</button>
+            </div>
+            <section class="admin-subpanel">
+              <div class="admin-section-heading"><div><h3>Needs attention</h3><p>Requests that need your next action.</p></div><button type="button" class="admin-text-button" data-open-panel="bookings-panel">View bookings</button></div>
+              <div id="dashboard-attention" class="admin-list" aria-live="polite"></div>
+            </section>
+            <section class="admin-subpanel">
+              <div class="admin-section-heading"><div><h3>Next appointments</h3><p>Upcoming approved work.</p></div><button type="button" class="admin-text-button" data-open-panel="calendar-panel">Open calendar</button></div>
+              <div id="dashboard-upcoming" class="admin-list"></div>
+            </section>
+          </section>
+
+          <section id="bookings-panel" class="admin-panel" aria-labelledby="bookings-heading" hidden>
+            <div class="admin-panel-heading"><div><p class="section-kicker">REQUEST WORKFLOW</p><h2 id="bookings-heading">Bookings</h2><p>Search, review and update requests. Payment and approval remain separate.</p></div></div>
+            <form class="admin-filters" id="booking-filters">
+              <label for="booking-search">Search</label>
+              <input id="booking-search" name="search" type="search" placeholder="Reference or customer name" />
+              <label for="booking-status-filter">Booking status</label>
+              <select id="booking-status-filter" name="status">
+                <option value="ALL">All</option><option value="NEW">New</option><option value="PENDING_REVIEW">Pending review</option>
+                <option value="AWAITING_PAYMENT">Awaiting payment</option><option value="AWAITING_APPROVAL">Awaiting approval</option>
+                <option value="APPROVED">Approved</option><option value="DECLINED">Declined</option><option value="COMPLETED">Completed</option><option value="CANCELLED">Cancelled</option>
+              </select>
+              <label for="booking-payment-filter">Payment</label>
+              <select id="booking-payment-filter" name="paymentStatus">
+                <option value="ALL">All payments</option><option value="UNPAID">Unpaid</option><option value="AWAITING_PAYMENT">Awaiting payment</option>
+                <option value="PARTIAL">Partially paid</option><option value="PAID">Paid</option><option value="REFUND_PENDING">Refund pending</option><option value="REFUNDED">Refunded</option>
+              </select>
+              <button class="button button-bright" type="submit">Apply</button>
+            </form>
+            <p class="admin-count" id="bookings-count" aria-live="polite"></p>
+            <div class="admin-table-wrap">
+              <table class="admin-table">
+                <thead><tr><th>Customer / reference</th><th>Service &amp; vehicle</th><th>Appointment</th><th>Booking status</th><th>Payment status</th><th></th></tr></thead>
+                <tbody id="bookings-list" aria-live="polite"></tbody>
+              </table>
+            </div>
+            <nav class="admin-pagination" aria-label="Booking pages">
+              <button class="admin-page-button" id="bookings-previous" type="button">Previous</button><span id="bookings-page-label"></span><button class="admin-page-button" id="bookings-next" type="button">Next</button>
+            </nav>
+          </section>
+
+          <section id="calendar-panel" class="admin-panel" aria-labelledby="calendar-heading" hidden>
+            <div class="admin-panel-heading"><div><p class="section-kicker">SCHEDULING</p><h2 id="calendar-heading">Availability &amp; calendar</h2><p>Set working hours, service durations and blocked dates. Pending and confirmed requests protect their slots.</p></div></div>
+            <div class="admin-calendar-toolbar">
+              <label for="calendar-view">View</label><select id="calendar-view"><option value="month">Month</option><option value="week">Week</option><option value="day">Day</option></select>
+              <label for="calendar-date">Starting date</label><input id="calendar-date" type="date" />
+              <button class="admin-refresh" type="button" id="calendar-load">Load appointments</button>
+            </div>
+            <p class="admin-count" id="calendar-range"></p>
+            <div id="calendar-bookings" class="admin-list"></div>
+            <div class="admin-schedule-grid">
+              <form id="hours-form" class="admin-subpanel">
+                <div class="admin-section-heading"><div><h3>Working hours</h3><p>Default hours are Monday–Saturday, 8:00 AM–7:00 PM; save this form to customize them.</p></div></div>
+                <div id="working-hours-fields" class="admin-hours-list"></div>
+                <div class="admin-duration-heading"><h4>Service durations</h4><p>Used to protect overlapping appointments.</p></div>
+                <div id="service-duration-fields" class="admin-duration-list"></div>
+                <button class="button button-bright" type="submit">Save availability settings</button>
+              </form>
+              <section class="admin-subpanel">
+                <div class="admin-section-heading"><div><h3>Block a date or time</h3><p>Block the full day or a specific time range.</p></div></div>
+                <form id="block-form" class="admin-block-form">
+                  <label for="block-date">Date</label><input id="block-date" name="date" type="date" required />
+                  <label for="block-start">From <span>(optional)</span></label><input id="block-start" name="startsAt" type="time" />
+                  <label for="block-end">Until</label><input id="block-end" name="endsAt" type="time" />
+                  <label for="block-reason">Reason</label><input id="block-reason" name="reason" maxlength="240" placeholder="Unavailable" />
+                  <button class="button button-bright" type="submit">Add blocked time</button>
+                </form>
+                <div id="availability-blocks" class="admin-list"></div>
+              </section>
+            </div>
+          </section>
+
+          <section id="payments-panel" class="admin-panel" aria-labelledby="payments-heading" hidden>
+            <div class="admin-panel-heading"><div><p class="section-kicker">FINANCIAL TRACKING</p><h2 id="payments-heading">Payments &amp; refunds</h2><p>Record verified payments and refund progress independently of booking approval. Updates are manual records; no payment gateway or refund is triggered here.</p></div></div>
+            <div id="payments-list" class="admin-list"></div>
+          </section>
+
+          <section id="reviews-panel" class="admin-panel" aria-labelledby="reviews-heading" hidden>
+            <div class="admin-panel-heading"><div><p class="section-kicker">CUSTOMER FEEDBACK</p><h2 id="reviews-heading">Customer reviews</h2></div></div>
+            <p class="admin-count" id="admin-reviews-count" aria-live="polite"></p>
+            <div id="admin-reviews" class="admin-reviews" aria-live="polite"></div>
+          </section>
+
+          <section id="customers-panel" class="admin-panel" aria-labelledby="customers-heading" hidden>
+            <div class="admin-panel-heading"><div><p class="section-kicker">CUSTOMER RELATIONSHIPS</p><h2 id="customers-heading">Customers</h2><p>Customer contact details are available in each booking.</p></div></div>
+            <p class="admin-count" id="customers-count" aria-live="polite"></p>
+            <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Customer</th><th>Contact</th><th>Bookings</th><th>Last appointment</th><th></th></tr></thead><tbody id="customers-list"></tbody></table></div>
+          </section>
+        </div>
+      </section>
+      <p class="admin-security-note">Credentials remain in memory only and are cleared when you sign out or close this page. Booking and customer information is private.</p>
+    </main>
+
+    <dialog class="booking-dialog" id="booking-dialog" aria-labelledby="booking-dialog-title">
+      <div class="booking-dialog-header"><div><p class="section-kicker">BOOKING DETAILS</p><h2 id="booking-dialog-title">Booking</h2></div><button type="button" class="booking-dialog-close" aria-label="Close booking details">×</button></div>
+      <div id="booking-dialog-content"></div>
+    </dialog>
+  </body>
+</html>

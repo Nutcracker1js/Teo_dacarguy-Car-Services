@@ -1,0 +1,40 @@
+databases:
+  - name: teo-car-services-db
+    databaseName: teo_services
+    user: teo_services_app
+    plan: basic-256mb
+    region: ohio
+    postgresMajorVersion: "17"
+    ipAllowList: []
+
+services:
+  - type: web
+    name: teo-car-services
+    runtime: node
+    plan: starter
+    region: ohio
+    buildCommand: npm ci && npm run build:site
+    preDeployCommand: npm run db:init
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: private-customer-uploads
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: teo-car-services-db
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "false"
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: SERVE_WEBSITE
+        value: "true"
+      - key: ADMIN_USERNAME
+        value: teo_admin
+      - key: ADMIN_PASSWORD
+        generateValue: true
