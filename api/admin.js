@@ -475,7 +475,7 @@ function createAdminRouter({
         ? crypto.createHash('sha256').update(issueSlipToken).digest('hex')
         : null,
     });
-    if (result.httpStatus === 200 && status === 'APPROVED' && result.body.previousStatus !== 'APPROVED') {
+    if (result.httpStatus === 200 && status === 'APPROVED') {
       const bookingResult = await pool.query(
         `SELECT id, reference, full_name, phone, whatsapp, email, whatsapp_opt_in, service, service_other,
           service_option, preferred_date::text AS preferred_date, to_char(preferred_time, 'HH24:MI') AS preferred_time,
@@ -485,6 +485,10 @@ function createAdminRouter({
       );
       if (!bookingResult.rowCount) {
         response.status(500).json({ error: 'Booking was approved, but its payment details could not be loaded.' });
+        return;
+      }
+      if (bookingResult.rows[0].payment_status === 'PAID') {
+        response.status(result.httpStatus).json(result.body);
         return;
       }
       result.body.paymentCheckout = await ensureApprovalCheckout(

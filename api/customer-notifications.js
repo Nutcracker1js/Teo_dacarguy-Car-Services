@@ -33,7 +33,19 @@ function createCustomerNotificationService({ pool, sendEmail }) {
     } finally {
       client.release();
     }
-    if (!notificationId) return { status: 'already_queued' };
+    if (!notificationId) {
+      const existing = await pool.query(
+        `SELECT id, delivery_status FROM booking_notifications WHERE event_key = $1`,
+        [input.eventKey],
+      );
+      if (!existing.rowCount) {
+        throw new Error('Queued customer email could not be found after a duplicate event.');
+      }
+      if (['PENDING', 'FAILED'].includes(existing.rows[0].delivery_status)) {
+        return deliver(existing.rows[0].id);
+      }
+      return { status: 'already_queued' };
+    }
     return deliver(notificationId);
   }
 

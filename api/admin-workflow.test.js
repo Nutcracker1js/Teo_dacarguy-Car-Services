@@ -157,6 +157,11 @@ before(async () => {
         };
       },
     },
+    bookingNotifications: {
+      async enqueueAndDeliver() {
+        return { status: 'failed', error: 'SMTP connection failed.' };
+      },
+    },
   }));
   server = app.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
@@ -202,6 +207,7 @@ test('approving a booking prepares payment without automatically sending a Whats
   assert.equal(result.status, 'APPROVED');
   assert.equal(result.paymentCheckout.status, 'ready');
   assert.equal(result.paymentCheckout.authorizationUrl, 'https://checkout.paystack.com/approval-test');
+  assert.equal(result.customerEmail.status, 'failed');
   const checkoutUpdate = queryLog.find(({ sql }) => sql.includes("SET payment_status = 'AWAITING_PAYMENT'"));
   assert.equal(checkoutUpdate.values[2], 80000);
 
@@ -212,6 +218,19 @@ test('approving a booking prepares payment without automatically sending a Whats
   });
   assert.equal(prepared.status, 200);
   assert.equal((await prepared.json()).authorizationUrl, 'https://checkout.paystack.com/approval-test');
+});
+
+test('re-approving an approved booking retries payment and email preparation', async () => {
+  currentBookingStatus = 'APPROVED';
+  const response = await request(`/bookings/${bookingId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'APPROVED' }),
+  });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.paymentCheckout.status, 'ready');
+  assert.equal(result.customerEmail.status, 'failed');
 });
 
 test('admin message API no longer sends customer WhatsApp messages', async () => {

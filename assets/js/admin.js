@@ -706,6 +706,8 @@ function renderBookingDetails(result) {
   statusForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     updateStatus.disabled = true;
+    updateStatus.textContent = 'Updating booking...';
+    showMessage('Saving the booking update and preparing payment/email. This may take a few seconds.');
     try {
       const updated = await sendJson(`/api/v1/admin/bookings/${booking.id}/status`, 'PATCH', {
         status: nextStatus.value,
@@ -729,6 +731,7 @@ function renderBookingDetails(result) {
       showMessage(error.message);
     } finally {
       updateStatus.disabled = false;
+      updateStatus.textContent = 'Update booking status';
     }
   });
   actions.append(statusForm);

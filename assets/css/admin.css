@@ -1081,27 +1081,48 @@
 
   .admin-inbox {
     grid-template-columns: 1fr;
+    min-height: 0;
+    overflow: visible;
   }
 
   .admin-sidebar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
     padding: 12px;
   }
 
   .admin-sidebar-title {
-    display: none;
+    grid-column: 1;
+    margin: 0;
+    color: #b6bbc2;
+    font-size: 10px;
   }
 
   .admin-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
     display: flex;
     overflow-x: auto;
-    gap: 3px;
+    gap: 6px;
+    padding-bottom: 2px;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .admin-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .admin-nav button {
     flex: 0 0 auto;
-    min-height: 37px;
-    padding: 0 9px;
-    font-size: 9px;
+    min-height: 44px;
+    padding: 0 12px;
+    scroll-snap-align: start;
+    font-size: 12px;
   }
 
   .admin-nav button.is-active {
@@ -1109,16 +1130,45 @@
   }
 
   .admin-sidebar .admin-logout {
-    position: absolute;
-    top: 20px;
-    right: 12px;
-    min-height: 32px;
-    padding: 0 8px;
-    font-size: 9px;
+    position: static;
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 40px;
+    margin: 0;
+    padding: 0 12px;
+    font-size: 11px;
   }
 
   .admin-content {
-    padding: 17px 12px;
+    padding: 18px 12px;
+  }
+
+  .admin-panel-heading,
+  .admin-section-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .admin-panel-heading h2 {
+    font-size: 30px;
+    line-height: 1.02;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-panel-heading > div > p:last-child,
+  .admin-section-heading p {
+    font-size: 12px;
+  }
+
+  .admin-panel-heading > button,
+  .admin-section-heading > button {
+    align-self: flex-start;
+    min-height: 44px;
+  }
+
+  .admin-subpanel {
+    padding: 14px 12px;
   }
 
   .admin-metrics {
@@ -1150,30 +1200,37 @@
   }
 
   .admin-filters {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
   }
 
-  .admin-filters label:nth-of-type(1),
-  .admin-filters input {
-    grid-column: 1 / -1;
+  .admin-filters label:nth-of-type(n),
+  .admin-filters input,
+  .admin-filters select:nth-of-type(n),
+  .admin-filters .button {
+    grid-column: auto;
+    grid-row: auto;
   }
 
-  .admin-filters label:nth-of-type(2),
-  .admin-filters select:nth-of-type(1) {
-    grid-column: 1;
+  .admin-filters label {
+    font-size: 11px;
   }
 
-  .admin-filters label:nth-of-type(3),
-  .admin-filters select:nth-of-type(2) {
-    grid-column: 2;
+  .admin-filters input,
+  .admin-filters select,
+  .admin-filters .button {
+    min-height: 44px;
+    font-size: 16px;
   }
 
   .admin-filters .button {
-    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .admin-calendar-toolbar {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    gap: 8px;
   }
 
   .admin-calendar-toolbar label {
@@ -1182,8 +1239,15 @@
 
   .admin-calendar-toolbar select,
   .admin-calendar-toolbar input {
-    flex: 1;
-    min-width: 120px;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .admin-calendar-toolbar button {
+    grid-column: 1 / -1;
+    min-height: 44px;
   }
 
   .admin-list-card {
@@ -1201,8 +1265,26 @@
   }
 
   .admin-hour-row {
-    grid-template-columns: minmax(90px, 1fr) 92px 92px;
-    gap: 5px;
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .admin-hour-row input[type="time"],
+  .admin-duration-row input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .admin-table th {
+    font-size: 10px;
+  }
+
+  .admin-table td {
+    font-size: 12px;
+  }
+
+  .admin-table td small {
+    font-size: 11px;
   }
 
   .booking-detail-grid {
@@ -1211,16 +1293,20 @@
 
   .booking-edit-form,
   .booking-status-form,
-  .booking-message-form {
-    grid-template-columns: 1fr 1fr;
+  .booking-message-form,
+  .admin-note-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .booking-edit-field input,
+  .booking-edit-field select {
+    min-height: 44px;
+    font-size: 16px;
   }
 
   .booking-edit-form > button {
-    grid-column: 1 / -1;
-  }
-
-  .admin-note-form {
-    grid-template-columns: 1fr;
+    width: 100%;
+    min-height: 44px;
   }
 
   .booking-dialog-header {
@@ -1229,6 +1315,15 @@
 
   #booking-dialog-content {
     padding: 12px;
+  }
+
+  .booking-message-option {
+    min-height: 42px;
+  }
+
+  .booking-dialog .admin-view-button,
+  .booking-dialog .button {
+    min-height: 44px;
   }
 }
 
@@ -1242,9 +1337,9 @@
   }
 
   .admin-home-link {
-    min-height: 33px;
-    padding: 0 8px;
-    font-size: 9px;
+    min-height: 40px;
+    padding: 0 10px;
+    font-size: 10px;
   }
 
   .admin-metrics {
@@ -1261,5 +1356,13 @@
 
   .booking-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .booking-dialog {
+    width: 100%;
+    max-height: 100vh;
+    max-height: 100dvh;
+    margin: auto 0;
+    border-radius: 0;
   }
 }

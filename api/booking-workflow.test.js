@@ -154,3 +154,54 @@ test('failed customer emails are reported and can be retried', async () => {
   assert.equal((await service.deliver('notification-id')).status, 'sent');
   assert.equal(deliveryAttempts, 2);
 });
+
+test('repeating an approval email event retries its failed outbox entry', async () => {
+  let providerCalls = 0;
+  const pool = {
+    async connect() {
+      return {
+        async query(sql) {
+          if (sql.includes('INSERT INTO booking_notifications')) {
+            return { rowCount: 0, rows: [] };
+          }
+          return { rowCount: 1, rows: [] };
+        },
+        release() {},
+      };
+    },
+    async query(sql) {
+      if (sql.includes('SELECT id, delivery_status')) {
+        return { rowCount: 1, rows: [{ id: 'notification-id', delivery_status: 'FAILED' }] };
+      }
+      if (sql.includes("SET delivery_status = 'SENDING'")) {
+        return {
+          rowCount: 1,
+          rows: [{
+            id: 'notification-id',
+            event_type: 'BOOKING_ACCEPTED',
+            recipient: 'customer@example.com',
+            payload: { reference: 'TD-TEST1001' },
+          }],
+        };
+      }
+      return { rowCount: 1, rows: [] };
+    },
+  };
+  const service = createCustomerNotificationService({
+    pool,
+    async sendEmail() {
+      providerCalls += 1;
+    },
+  });
+
+  const result = await service.enqueueAndDeliver({
+    bookingId: 'booking-id',
+    eventKey: 'booking_accepted:booking-id:checkout-url',
+    eventType: 'BOOKING_ACCEPTED',
+    recipient: 'customer@example.com',
+    payload: { reference: 'TD-TEST1001' },
+  });
+
+  assert.equal(result.status, 'sent');
+  assert.equal(providerCalls, 1);
+});
