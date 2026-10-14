@@ -202,6 +202,22 @@ test('unconfigured notification channels are reported rather than silently treat
   );
 });
 
+test('email notifications default to the standard submission port', () => {
+  const environment = {
+    SMTP_HOST: 'smtp.example.test',
+    SMTP_USER: 'api@example.test',
+    SMTP_PASSWORD: 'test-password',
+    NOTIFICATION_EMAIL: 'owner@example.test',
+  };
+  let transportOptions;
+  createNotificationSender(environment, fetch, (options) => {
+    transportOptions = options;
+    return { async sendMail() {} };
+  });
+  assert.equal(getNotificationReadiness(environment).email.configured, true);
+  assert.equal(transportOptions.port, 587);
+});
+
 test('failed notification provider does not claim delivery', async () => {
   let logged = '';
   const originalError = console.error;

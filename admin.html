@@ -7,9 +7,9 @@
     <meta name="api-base-url" content="" />
     <meta name="description" content="Private booking management for Teo_dacarguy Car Services." />
     <title>Booking Management | Teo_dacarguy Car Services</title>
-    <link rel="stylesheet" href="styles.css" />
-    <link rel="stylesheet" href="admin.css" />
-    <script src="admin.js" defer></script>
+    <link rel="stylesheet" href="assets/css/styles.css" />
+    <link rel="stylesheet" href="assets/css/admin.css" />
+    <script src="assets/js/admin.js" defer></script>
   </head>
   <body class="admin-page">
     <a class="skip-link" href="#main">Skip to content</a>
@@ -88,12 +88,24 @@
               <select id="booking-status-filter" name="status">
                 <option value="ALL">All</option><option value="NEW">New</option><option value="PENDING_REVIEW">Pending review</option>
                 <option value="AWAITING_PAYMENT">Awaiting payment</option><option value="AWAITING_APPROVAL">Awaiting approval</option>
-                <option value="APPROVED">Approved</option><option value="DECLINED">Declined</option><option value="COMPLETED">Completed</option><option value="CANCELLED">Cancelled</option>
+                <option value="APPROVED">Approved</option><option value="RESCHEDULE_PROPOSED">Reschedule proposed</option>
+                <option value="CONFIRMED">Confirmed</option><option value="DECLINED">Declined</option>
+                <option value="COMPLETED">Completed</option><option value="CANCELLED">Cancelled</option><option value="EXPIRED">Expired</option>
               </select>
+              <label for="booking-service-filter">Service</label>
+              <select id="booking-service-filter" name="service">
+                <option value="ALL">All services</option><option value="MAINTENANCE">Maintenance</option>
+                <option value="DETAILING">Detailing</option><option value="WRAPPING">Wrapping</option>
+                <option value="TINT">Tint / glass</option><option value="UPGRADES">Upgrades</option>
+                <option value="REGISTRATION">Registration</option><option value="OTHER">Other</option>
+              </select>
+              <label for="booking-from-filter">From date</label><input id="booking-from-filter" name="from" type="date" />
+              <label for="booking-to-filter">To date</label><input id="booking-to-filter" name="to" type="date" />
               <label for="booking-payment-filter">Payment</label>
               <select id="booking-payment-filter" name="paymentStatus">
                 <option value="ALL">All payments</option><option value="UNPAID">Unpaid</option><option value="AWAITING_PAYMENT">Awaiting payment</option>
-                <option value="PARTIAL">Partially paid</option><option value="PAID">Paid</option><option value="REFUND_PENDING">Refund pending</option><option value="REFUNDED">Refunded</option>
+                <option value="PARTIAL">Partially paid</option><option value="PAID">Paid</option><option value="FAILED">Failed</option>
+                <option value="EXPIRED">Expired</option><option value="REFUND_PENDING">Refund pending</option><option value="REFUNDED">Refunded</option>
               </select>
               <button class="button button-bright" type="submit">Apply</button>
             </form>

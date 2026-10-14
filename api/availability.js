@@ -1,4 +1,12 @@
-const RESERVED_STATUSES = ['NEW', 'PENDING_REVIEW', 'AWAITING_PAYMENT', 'AWAITING_APPROVAL', 'APPROVED', 'CONFIRMED'];
+const RESERVED_STATUSES = [
+  'NEW',
+  'PENDING_REVIEW',
+  'AWAITING_PAYMENT',
+  'AWAITING_APPROVAL',
+  'APPROVED',
+  'CONFIRMED',
+  'RESCHEDULE_PROPOSED',
+];
 const DEFAULT_OPENING_MINUTES = 8 * 60;
 const DEFAULT_CLOSING_MINUTES = 19 * 60;
 const DEFAULT_DURATION_MINUTES = 60;
@@ -55,7 +63,14 @@ async function getAvailableSlots(pool, date, service) {
       `SELECT b.preferred_time::text, COALESCE(d.duration_minutes, 60) AS duration_minutes
        FROM bookings b LEFT JOIN booking_service_durations d ON d.service = b.service
        WHERE b.preferred_date = $1 AND b.preferred_time IS NOT NULL
-         AND b.status = ANY($2::varchar[])`,
+         AND b.status = ANY($2::varchar[])
+         AND (b.status NOT IN ('NEW', 'PENDING_REVIEW')
+           OR b.request_expires_at IS NULL OR b.request_expires_at > NOW())
+       UNION ALL
+       SELECT b.proposed_preferred_time::text, COALESCE(d.duration_minutes, 60) AS duration_minutes
+       FROM bookings b LEFT JOIN booking_service_durations d ON d.service = b.service
+       WHERE b.proposed_preferred_date = $1 AND b.proposed_preferred_time IS NOT NULL
+         AND b.status = 'RESCHEDULE_PROPOSED'`,
       [date, RESERVED_STATUSES],
     ),
     pool.query('SELECT COUNT(*)::int AS total FROM booking_working_hours'),
@@ -88,7 +103,7 @@ async function getAvailableSlots(pool, date, service) {
   return { configured: isConfigured, slots };
 }
 
-async function reserveBookingSlot(client, booking) {
+async function reserveBookingSlot(client, booking, { excludeBookingId = null } = {}) {
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [booking.preferredDate]);
   const { rows: hours } = await client.query(
     `SELECT is_open, opens_at::text, closes_at::text FROM booking_working_hours
@@ -132,12 +147,19 @@ async function reserveBookingSlot(client, booking) {
   const conflicts = await client.query(
     `SELECT b.id
      FROM bookings b LEFT JOIN booking_service_durations d ON d.service = b.service
-     WHERE b.preferred_date = $1 AND b.preferred_time IS NOT NULL
-       AND b.status = ANY($4::varchar[])
-       AND b.preferred_time < $3::time
-       AND b.preferred_time + (COALESCE(d.duration_minutes, 60) * INTERVAL '1 minute') > $2::time
+     WHERE ((b.preferred_date = $1 AND b.preferred_time IS NOT NULL
+         AND b.preferred_time < $3::time
+         AND b.preferred_time + (COALESCE(d.duration_minutes, 60) * INTERVAL '1 minute') > $2::time
+         AND b.status = ANY($4::varchar[])
+         AND (b.status NOT IN ('NEW', 'PENDING_REVIEW')
+           OR b.request_expires_at IS NULL OR b.request_expires_at > NOW()))
+       OR (b.proposed_preferred_date = $1 AND b.proposed_preferred_time IS NOT NULL
+         AND b.proposed_preferred_time < $3::time
+         AND b.proposed_preferred_time + (COALESCE(d.duration_minutes, 60) * INTERVAL '1 minute') > $2::time
+         AND b.status = 'RESCHEDULE_PROPOSED'))
+       AND ($5::uuid IS NULL OR b.id <> $5::uuid)
      LIMIT 1`,
-    [booking.preferredDate, booking.preferredTime, toTime(start + duration), RESERVED_STATUSES],
+    [booking.preferredDate, booking.preferredTime, toTime(start + duration), RESERVED_STATUSES, excludeBookingId],
   );
   if (conflicts.rowCount) {
     throw availabilityError(409, 'That appointment time has just been reserved. Choose another available time.');

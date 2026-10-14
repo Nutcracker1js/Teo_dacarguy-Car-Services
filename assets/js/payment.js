@@ -8,7 +8,15 @@ if (paymentLookupForm) {
   const resultSection = document.querySelector('#payment-result');
   const checkoutForm = document.querySelector('#payment-checkout-form');
   const checkoutButton = document.querySelector('#payment-checkout-button');
-  const apiBaseUrl = document.querySelector('meta[name="api-base-url"]')?.content || '';
+  const configuredApiBaseUrl = document.querySelector('meta[name="api-base-url"]')?.content.trim() || '';
+  const isLocalWebsite = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  const hostedApiBaseUrl = window.location.hostname === 'nutcracker1js.github.io'
+    ? 'https://teo-dacarguy-car-services.onrender.com'
+    : '';
+  const apiBaseUrl = (configuredApiBaseUrl
+    || (isLocalWebsite ? `${window.location.protocol}//${window.location.hostname}:3000` : '')
+    || hostedApiBaseUrl)
+    .replace(/\/$/, '');
   const query = new URLSearchParams(window.location.search);
   referenceInput.value = query.get('reference') || query.get('bookingReference') || '';
   let activeBooking = null;

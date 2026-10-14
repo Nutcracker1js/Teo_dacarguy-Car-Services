@@ -8,9 +8,18 @@ if (statusForm) {
   const paymentForm = document.querySelector('#booking-payment-form');
   const paymentError = document.querySelector('#booking-payment-error');
   const paymentButton = paymentForm.querySelector('[type="submit"]');
-  const apiBaseUrl = document.querySelector('meta[name="api-base-url"]')?.content || '';
+  const configuredApiBaseUrl = document.querySelector('meta[name="api-base-url"]')?.content.trim() || '';
+  const isLocalWebsite = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  const hostedApiBaseUrl = window.location.hostname === 'nutcracker1js.github.io'
+    ? 'https://teo-dacarguy-car-services.onrender.com'
+    : '';
+  const apiBaseUrl = (configuredApiBaseUrl
+    || (isLocalWebsite ? `${window.location.protocol}//${window.location.hostname}:3000` : '')
+    || hostedApiBaseUrl)
+    .replace(/\/$/, '');
   const query = new URLSearchParams(window.location.search);
   const requestedReference = query.get('bookingReference') || query.get('reference');
+  const responseToken = query.get('responseToken') || '';
   const transactionReference = query.get('trxref')
     || (query.get('reference') && !query.get('reference').startsWith('TD-') ? query.get('reference') : '');
   if (requestedReference) referenceInput.value = requestedReference;
@@ -25,12 +34,14 @@ if (statusForm) {
     CONTACTED: ['Update in progress', 'Teo has contacted you about your booking.', 'Please follow the instructions Teo shared with you.'],
     AWAITING_PAYMENT: ['Ready for payment', 'Your booking has been reviewed and is awaiting payment.', 'Teo will share the confirmed amount and payment instructions.'],
     AWAITING_APPROVAL: ['Payment under review', 'Your payment is being verified before final approval.', 'Your appointment is not confirmed until Teo sends the official approval.'],
+    RESCHEDULE_PROPOSED: ['Alternative time proposed', 'Teo has suggested a different appointment time.', 'Review the proposed time and respond using the buttons below.'],
     CONFIRMED: ['Booking accepted', 'Your booking has been accepted.', 'Teo has confirmed your appointment. Contact us if you need any changes.'],
     APPROVED: ['Booking accepted', 'Your booking has been accepted.', 'Teo has confirmed your appointment. Payment details will be arranged separately if payment is still due.'],
     DECLINED: ['Booking update', 'Teo is unable to accept this booking as requested.', 'Contact Teo using the details below to discuss the next steps.'],
     CANCELLED: ['Booking cancelled', 'This booking has been cancelled.', 'Contact Teo if you need help with rescheduling or a refund.'],
     COMPLETED: ['Service completed', 'This booking is marked as completed.', 'Thank you for choosing Teo DaCarguy Car Services.'],
     CLOSED: ['Booking closed', 'This booking is now closed.', 'Contact Teo if you need further assistance.'],
+    EXPIRED: ['Booking request expired', 'The request or payment period has ended.', 'Contact Teo if you would like to arrange a new appointment.'],
   };
   const serviceLabels = {
     TINT: 'Tint / Glass Fortification',
@@ -70,6 +81,16 @@ if (statusForm) {
       : '';
     document.querySelector('#booking-status-appointment').textContent =
       [dateLabel(booking.preferred_date), time].filter(Boolean).join(' · ') || 'To be arranged';
+    const proposedRow = document.querySelector('#booking-proposed-appointment-row');
+    proposedRow.hidden = booking.status !== 'RESCHEDULE_PROPOSED';
+    const proposedTime = booking.proposed_preferred_time
+      ? new Intl.DateTimeFormat('en-NG', { hour: 'numeric', minute: '2-digit' })
+        .format(new Date(`2000-01-01T${booking.proposed_preferred_time}:00`))
+      : '';
+    document.querySelector('#booking-status-proposed-appointment').textContent =
+      [dateLabel(booking.proposed_preferred_date), proposedTime].filter(Boolean).join(' · ');
+    document.querySelector('#reschedule-response-panel').hidden =
+      booking.status !== 'RESCHEDULE_PROPOSED' || !responseToken;
     const amountExpected = Number(booking.amount_expected);
     const isApproved = ['APPROVED', 'CONFIRMED'].includes(booking.status);
     const isPaid = booking.payment_status === 'PAID';
@@ -90,6 +111,41 @@ if (statusForm) {
     paymentForm.hidden = !isApproved || isPaid || !Number.isFinite(amountExpected) || amountExpected <= 0;
     resultSection.hidden = false;
   };
+
+  async function respondToReschedule(accept) {
+    const buttons = [
+      document.querySelector('#accept-reschedule'),
+      document.querySelector('#decline-reschedule'),
+    ];
+    buttons.forEach((button) => { button.disabled = true; });
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/v1/reschedule-response`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reference: referenceInput.value.trim(),
+          phone: new FormData(statusForm).get('phone'),
+          responseToken,
+          accept,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not update the proposed appointment.');
+      document.querySelector('#reschedule-response-panel').hidden = true;
+      document.querySelector('#booking-status-next-step').textContent = accept
+        ? `You accepted the proposed appointment. Booking status: ${result.status.replaceAll('_', ' ').toLowerCase()}.`
+        : 'You declined the proposed time. Teo will follow up about the original appointment.';
+      statusForm.requestSubmit();
+    } catch (error) {
+      paymentError.textContent = error.message;
+      paymentError.hidden = false;
+    } finally {
+      buttons.forEach((button) => { button.disabled = false; });
+    }
+  }
+
+  document.querySelector('#accept-reschedule').addEventListener('click', () => respondToReschedule(true));
+  document.querySelector('#decline-reschedule').addEventListener('click', () => respondToReschedule(false));
 
   statusForm.addEventListener('submit', async (event) => {
     event.preventDefault();

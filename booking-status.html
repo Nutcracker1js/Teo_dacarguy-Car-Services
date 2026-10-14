@@ -10,8 +10,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
-    <script src="booking-status.js" defer></script>
+    <link rel="stylesheet" href="assets/css/styles.css">
+    <script src="assets/js/booking-status.js" defer></script>
   </head>
   <body class="consultation-body booking-status-page">
     <a class="skip-link" href="#main">Skip to content</a>
@@ -48,8 +48,14 @@
             <div><dt>Service</dt><dd id="booking-status-service"></dd></div>
             <div><dt>Appointment</dt><dd id="booking-status-appointment"></dd></div>
             <div><dt>Payment</dt><dd id="booking-status-payment"></dd></div>
+            <div id="booking-proposed-appointment-row" hidden><dt>Proposed appointment</dt><dd id="booking-status-proposed-appointment"></dd></div>
           </dl>
           <p id="booking-status-next-step" class="booking-status-next-step"></p>
+          <section id="reschedule-response-panel" hidden aria-label="Respond to proposed appointment">
+            <p>Teo has suggested another appointment time. Choose whether to accept it.</p>
+            <button class="button button-bright" id="accept-reschedule" type="button">Accept proposed time</button>
+            <button class="button button-outline" id="decline-reschedule" type="button">Decline proposed time</button>
+          </section>
           <form id="booking-payment-form" class="booking-payment-form" hidden>
             <p id="booking-payment-error" class="form-error" role="alert" hidden></p>
             <button class="button button-bright" type="submit">Pay with Paystack</button>

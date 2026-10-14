@@ -6,11 +6,14 @@ const multer = require('multer');
 const { rateLimit } = require('express-rate-limit');
 const { validEmail } = require('./payments');
 const { getFixedServicePrice } = require('./pricing');
+const { canIssueBookingSlip, createBookingSlip } = require('./booking-slip');
+const { reserveBookingSlot } = require('./availability');
 
 const STATUSES = new Set([
   'NEW',
   'PENDING_REVIEW',
   'CONTACTED',
+  'EXPIRED',
   'CONFIRMED',
   'AWAITING_PAYMENT',
   'AWAITING_APPROVAL',
@@ -19,14 +22,24 @@ const STATUSES = new Set([
   'COMPLETED',
   'CANCELLED',
   'CLOSED',
+  'RESCHEDULE_PROPOSED',
 ]);
-const PAYMENT_STATUSES = new Set(['UNPAID', 'AWAITING_PAYMENT', 'PARTIAL', 'PAID', 'REFUND_PENDING', 'REFUNDED']);
+const PAYMENT_STATUSES = new Set([
+  'UNPAID',
+  'AWAITING_PAYMENT',
+  'PARTIAL',
+  'PAID',
+  'FAILED',
+  'EXPIRED',
+  'REFUND_PENDING',
+  'REFUNDED',
+]);
 const PAYMENT_VERIFICATIONS = new Set(['UNVERIFIED', 'VERIFIED', 'FAILED']);
 const REFUND_STATUSES = new Set(['NONE', 'INITIATED', 'COMPLETED']);
 const RESOLUTIONS = new Set(['RESCHEDULE', 'INITIATE_REFUND']);
 const SUBMISSION_TYPES = new Set(['all', 'booking', 'enquiry']);
 
-async function ensureApprovalCheckout(pool, paymentGateway, booking) {
+async function ensureApprovalCheckout(pool, paymentGateway, booking, paymentExpiryHours = 24) {
   if (booking.payment_status === 'PAID') {
     return { status: 'failed', error: 'Payment is already recorded; no payment link was sent.' };
   }
@@ -44,7 +57,21 @@ async function ensureApprovalCheckout(pool, paymentGateway, booking) {
     && booking.payment_reference
     && storedAmount === amountExpected
     && isPaystackCheckoutUrl(booking.payment_checkout_url)) {
+    if (booking.payment_expires_at && new Date(booking.payment_expires_at) <= new Date()) {
+      return { status: 'failed', error: 'The payment period has ended. The transaction must be checked before a new payment link is created.' };
+    }
+    if (!booking.payment_expires_at) {
+      await pool.query(
+        `UPDATE bookings SET payment_expires_at = NOW() + ($1 * INTERVAL '1 hour')
+         WHERE id = $2 AND payment_reference = $3`,
+        [paymentExpiryHours, booking.id, booking.payment_reference],
+      );
+    }
     return { status: 'ready', authorizationUrl: booking.payment_checkout_url };
+  }
+  if (booking.payment_status === 'AWAITING_PAYMENT' && booking.payment_expires_at
+    && new Date(booking.payment_expires_at) <= new Date()) {
+    return { status: 'failed', error: 'The payment period has ended. The transaction must be checked before a new payment link is created.' };
   }
   if (!paymentGateway.configured) {
     return { status: 'not_configured', missing: ['PAYSTACK_SECRET_KEY'] };
@@ -70,10 +97,11 @@ async function ensureApprovalCheckout(pool, paymentGateway, booking) {
   }
   const saved = await pool.query(
     `UPDATE bookings SET payment_status = 'AWAITING_PAYMENT', payment_reference = $1,
-      payment_checkout_url = $2, amount_expected = $3
-     WHERE id = $4 AND status = 'APPROVED' AND payment_status <> 'PAID'
+      payment_checkout_url = $2, amount_expected = $3,
+      payment_expires_at = NOW() + ($4 * INTERVAL '1 hour')
+     WHERE id = $5 AND status = 'APPROVED' AND payment_status <> 'PAID'
      RETURNING id`,
-    [checkout.data.reference, checkout.data.authorizationUrl, amountExpected, booking.id],
+    [checkout.data.reference, checkout.data.authorizationUrl, amountExpected, paymentExpiryHours, booking.id],
   );
   if (!saved.rowCount) {
     return { status: 'failed', error: 'Booking changed while preparing checkout. Check the booking and try again.' };
@@ -119,6 +147,9 @@ function createAdminRouter({
   password,
   privateDirectory,
   paymentGateway = { configured: false },
+  bookingNotifications = null,
+  paymentExpiryHours = 24,
+  publicSiteUrl = '',
 }) {
   const router = express.Router();
   const authenticate = createAdminAuth(username, password);
@@ -155,11 +186,17 @@ function createAdminRouter({
   router.get('/bookings', authenticate, asyncHandler(async (request, response) => {
     const status = request.query.status || 'ALL';
     const paymentStatus = request.query.paymentStatus || 'ALL';
+    const service = request.query.service || 'ALL';
+    const from = request.query.from || '';
+    const to = request.query.to || '';
     const search = typeof request.query.search === 'string' ? request.query.search.trim().slice(0, 120) : '';
     const limit = Number(request.query.limit || 25);
     const offset = Number(request.query.offset || 0);
     if ((status !== 'ALL' && !normalizeStatusValue(status))
       || (paymentStatus !== 'ALL' && !PAYMENT_STATUSES.has(paymentStatus))
+      || (service !== 'ALL' && !/^[A-Z_]{2,32}$/.test(service))
+      || (from && !isDateValue(from)) || (to && !isDateValue(to))
+      || (from && to && from > to)
       || !Number.isInteger(limit) || limit < 1 || limit > 100
       || !Number.isInteger(offset) || offset < 0 || offset > 100000) {
       response.status(400).json({ error: 'Choose valid booking filters and pagination.' });
@@ -171,13 +208,25 @@ function createAdminRouter({
        FROM bookings b
        WHERE ($1 = 'ALL' OR b.status = $1)
          AND ($2 = 'ALL' OR b.payment_status = $2)
+         AND ($6 = 'ALL' OR b.service = $6)
+         AND ($7 = '' OR b.preferred_date >= $7::date)
+         AND ($8 = '' OR b.preferred_date <= $8::date)
          AND ($3 = '' OR b.full_name ILIKE '%' || $3 || '%'
            OR b.reference ILIKE '%' || $3 || '%'
            OR b.id::text ILIKE '%' || replace($3, 'TD-', '') || '%'
            OR LEFT(b.id::text, 8) ILIKE '%' || replace($3, 'TD-', '') || '%')
        ORDER BY b.preferred_date ASC, b.preferred_time ASC NULLS LAST, b.created_at DESC
        LIMIT $4 OFFSET $5`,
-      [status === 'ALL' ? 'ALL' : normalizeStatusValue(status), paymentStatus, search, limit, offset],
+      [
+        status === 'ALL' ? 'ALL' : normalizeStatusValue(status),
+        paymentStatus,
+        search,
+        limit,
+        offset,
+        service,
+        from,
+        to,
+      ],
     );
     response.json({ bookings: result.rows, total: result.rows[0]?.total || 0, limit, offset });
   }));
@@ -220,7 +269,7 @@ function createAdminRouter({
       response.status(404).json({ error: 'Booking not found.' });
       return;
     }
-    const [booking, paymentDocuments, notes, history] = await Promise.all([
+    const [booking, paymentDocuments, notes, history, activity, notifications] = await Promise.all([
       pool.query(
         `SELECT b.*,
           COALESCE((
@@ -245,6 +294,16 @@ function createAdminRouter({
         'SELECT id, previous_status, status, resolution, created_at FROM booking_status_history WHERE booking_id = $1 ORDER BY created_at DESC',
         [request.params.id],
       ),
+      pool.query(
+        `SELECT id, action, details, created_at FROM booking_activity_history
+         WHERE booking_id = $1 ORDER BY created_at DESC`,
+        [request.params.id],
+      ),
+      pool.query(
+        `SELECT id, event_type, recipient, delivery_status, attempts, last_error, queued_at, sent_at
+         FROM booking_notifications WHERE booking_id = $1 ORDER BY queued_at DESC`,
+        [request.params.id],
+      ),
     ]);
     if (!booking.rowCount) {
       response.status(404).json({ error: 'Booking not found.' });
@@ -257,7 +316,58 @@ function createAdminRouter({
       paymentDocuments: paymentDocuments.rows,
       notes: notes.rows,
       history: history.rows,
+      activity: activity.rows,
+      notifications: notifications.rows,
     });
+  }));
+
+  router.get('/bookings/:id/slip', authenticate, asyncHandler(async (request, response) => {
+    if (!UUID_PATTERN.test(request.params.id)) {
+      response.status(404).json({ error: 'Booking slip not found.' });
+      return;
+    }
+    const result = await pool.query(
+      `SELECT reference, full_name, phone, email, service, service_other, vehicle_make, vehicle_model,
+        vehicle_year, registration, preferred_date::text AS preferred_date,
+        to_char(preferred_time, 'HH24:MI') AS preferred_time, location, location_other,
+        appointment_instructions, status, payment_status, payment_verification,
+        amount_expected, amount_received, payment_reference
+       FROM bookings WHERE id = $1`,
+      [request.params.id],
+    );
+    if (!result.rowCount || !canIssueBookingSlip(result.rows[0])) {
+      response.status(409).json({ error: 'A booking slip is available only after final confirmation and any required payment verification.' });
+      return;
+    }
+    const pdf = await createBookingSlip(result.rows[0]);
+    response.set({
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="booking-${result.rows[0].reference}.pdf"`,
+    });
+    response.send(pdf);
+  }));
+
+  router.post('/notifications/:id/retry', authenticate, asyncHandler(async (request, response) => {
+    if (!UUID_PATTERN.test(request.params.id) || !bookingNotifications) {
+      response.status(404).json({ error: 'Notification not found.' });
+      return;
+    }
+    const notification = await pool.query(
+      `UPDATE booking_notifications n
+       SET recipient = COALESCE(NULLIF(b.email, ''), n.recipient)
+       FROM bookings b
+       WHERE n.id = $1 AND b.id = n.booking_id AND n.delivery_status = 'FAILED'
+       RETURNING n.id`,
+      [request.params.id],
+    );
+    if (!notification.rowCount) {
+      response.status(404).json({ error: 'Failed notification not found.' });
+      return;
+    }
+    const result = await bookingNotifications.deliver(request.params.id);
+    response.status(result.status === 'sent' ? 200 : 502).json(result);
   }));
 
   router.delete('/bookings/:id', authenticate, asyncHandler(async (request, response) => {
@@ -323,6 +433,14 @@ function createAdminRouter({
     }
     const status = normalizeStatusValue(request.body?.status);
     const resolution = request.body?.resolution;
+    const declineReason = typeof request.body?.declineReason === 'string'
+      ? request.body.declineReason.trim()
+      : '';
+    const appointmentInstructions = typeof request.body?.appointmentInstructions === 'string'
+      ? request.body.appointmentInstructions.trim()
+      : '';
+    const proposedDate = request.body?.proposedDate;
+    const proposedTime = request.body?.proposedTime;
     if (!status) {
       response.status(400).json({ error: 'Choose a supported booking status.' });
       return;
@@ -331,12 +449,37 @@ function createAdminRouter({
       response.status(400).json({ error: 'Choose rescheduling or refund as the resolution.' });
       return;
     }
-    const result = await updateBookingStatus(pool, request.params.id, status, resolution);
+    if (declineReason.length > 1000 || appointmentInstructions.length > 2000) {
+      response.status(400).json({ error: 'Keep the customer message within its allowed length.' });
+      return;
+    }
+    if (status === 'RESCHEDULE_PROPOSED'
+      ? (!isDateValue(proposedDate) || !isTimeValue(proposedTime))
+      : (proposedDate !== undefined || proposedTime !== undefined)) {
+      response.status(400).json({ error: 'Provide a valid alternative appointment date and time only when proposing a reschedule.' });
+      return;
+    }
+    const issueSlipToken = status === 'CONFIRMED' ? crypto.randomBytes(32).toString('base64url') : null;
+    const proposalToken = status === 'RESCHEDULE_PROPOSED'
+      ? crypto.randomBytes(32).toString('base64url')
+      : null;
+    const result = await updateBookingStatus(pool, request.params.id, status, resolution, {
+      declineReason,
+      appointmentInstructions,
+      proposedDate,
+      proposedTime,
+      proposalTokenHash: proposalToken
+        ? crypto.createHash('sha256').update(proposalToken).digest('hex')
+        : null,
+      slipTokenHash: issueSlipToken
+        ? crypto.createHash('sha256').update(issueSlipToken).digest('hex')
+        : null,
+    });
     if (result.httpStatus === 200 && status === 'APPROVED' && result.body.previousStatus !== 'APPROVED') {
       const bookingResult = await pool.query(
         `SELECT id, reference, full_name, phone, whatsapp, email, whatsapp_opt_in, service, service_other,
           service_option, preferred_date::text AS preferred_date, to_char(preferred_time, 'HH24:MI') AS preferred_time,
-          amount_expected, payment_status, payment_reference, payment_checkout_url
+          amount_expected, payment_status, payment_reference, payment_checkout_url, payment_expires_at
          FROM bookings WHERE id = $1`,
         [request.params.id],
       );
@@ -344,7 +487,58 @@ function createAdminRouter({
         response.status(500).json({ error: 'Booking was approved, but its payment details could not be loaded.' });
         return;
       }
-      result.body.paymentCheckout = await ensureApprovalCheckout(pool, paymentGateway, bookingResult.rows[0]);
+      result.body.paymentCheckout = await ensureApprovalCheckout(
+        pool,
+        paymentGateway,
+        bookingResult.rows[0],
+        paymentExpiryHours,
+      );
+      const eventType = result.body.paymentCheckout.status === 'ready'
+        ? 'BOOKING_ACCEPTED'
+        : 'BOOKING_QUOTE_REQUIRED';
+      result.body.customerEmail = await notifyBookingEvent(
+        pool,
+        bookingNotifications,
+        request.params.id,
+        eventType,
+        {
+          checkoutUrl: result.body.paymentCheckout.authorizationUrl || null,
+          eventKey: `booking_accepted:${request.params.id}:${result.body.paymentCheckout.authorizationUrl || 'quote-required'}`,
+          paymentDeadline: result.body.paymentCheckout.status === 'ready'
+            ? paymentDeadline(bookingResult.rows[0].payment_expires_at, paymentExpiryHours)
+            : null,
+        },
+      );
+    } else if (result.httpStatus === 200
+      && (result.body.previousStatus !== status || result.body.proposalUpdated)) {
+      const notificationType = {
+        DECLINED: 'BOOKING_DECLINED',
+        RESCHEDULE_PROPOSED: 'RESCHEDULE_PROPOSED',
+        CONFIRMED: 'APPOINTMENT_CONFIRMED',
+        CANCELLED: 'BOOKING_CANCELLED',
+      }[status];
+      if (notificationType) {
+        const slipUrl = status === 'CONFIRMED' && issueSlipToken
+          ? createCustomerSlipUrl(publicSiteUrl, result.body.reference, issueSlipToken)
+          : null;
+        const responseUrl = status === 'RESCHEDULE_PROPOSED' && proposalToken
+          ? createProposalResponseUrl(publicSiteUrl, result.body.reference, proposalToken)
+          : null;
+        result.body.customerEmail = await notifyBookingEvent(
+          pool,
+          bookingNotifications,
+          request.params.id,
+          notificationType,
+          {
+            declineReason: status === 'DECLINED' ? declineReason : null,
+            instructions: appointmentInstructions || null,
+            slipUrl,
+            responseUrl,
+            proposedDate,
+            proposedTime,
+          },
+        );
+      }
     }
     response.status(result.httpStatus).json(result.body);
   }));
@@ -358,7 +552,7 @@ function createAdminRouter({
       `SELECT id, reference, full_name, phone, whatsapp, email, whatsapp_opt_in, service, service_other,
         service_option, status, preferred_date::text AS preferred_date,
         to_char(preferred_time, 'HH24:MI') AS preferred_time,
-        amount_expected, payment_status, payment_reference, payment_checkout_url
+        amount_expected, payment_status, payment_reference, payment_checkout_url, payment_expires_at
        FROM bookings WHERE id = $1`,
       [request.params.id],
     );
@@ -371,7 +565,7 @@ function createAdminRouter({
       response.status(409).json({ error: 'Approve this booking before preparing its payment link.' });
       return;
     }
-    const checkout = await ensureApprovalCheckout(pool, paymentGateway, booking);
+    const checkout = await ensureApprovalCheckout(pool, paymentGateway, booking, paymentExpiryHours);
     if (checkout.status !== 'ready') {
       const status = checkout.status === 'not_configured' ? 503 : 409;
       response.status(status).json({
@@ -380,7 +574,18 @@ function createAdminRouter({
       });
       return;
     }
-    response.json({ authorizationUrl: checkout.authorizationUrl });
+    const customerEmail = await notifyBookingEvent(
+      pool,
+      bookingNotifications,
+      request.params.id,
+      'BOOKING_ACCEPTED',
+      {
+        checkoutUrl: checkout.authorizationUrl,
+        eventKey: `booking_accepted:${request.params.id}:${checkout.authorizationUrl}`,
+        paymentDeadline: paymentDeadline(booking.payment_expires_at, paymentExpiryHours),
+      },
+    );
+    response.json({ authorizationUrl: checkout.authorizationUrl, customerEmail });
   }));
 
   router.patch('/bookings/:id/payment', authenticate, asyncHandler(async (request, response) => {
@@ -405,29 +610,51 @@ function createAdminRouter({
       return;
     }
     const currentBooking = await pool.query(
-      'SELECT service, service_option FROM bookings WHERE id = $1',
+      `SELECT service, service_option, payment_status, payment_verification,
+        amount_received, amount_expected, payment_reference, refund_status
+       FROM bookings WHERE id = $1`,
       [request.params.id],
     );
     if (!currentBooking.rowCount) {
       response.status(404).json({ error: 'Booking not found.' });
       return;
     }
-    const fixedPrice = getFixedServicePrice(
-      currentBooking.rows[0].service,
-      currentBooking.rows[0].service_option,
-    );
+    const existing = currentBooking.rows[0];
+    if ((paymentStatus === 'PAID' || verification === 'VERIFIED')
+      && !(existing.payment_status === 'PAID' && existing.payment_verification === 'VERIFIED')) {
+      response.status(409).json({ error: 'A payment can be marked paid only after Paystack verifies it.' });
+      return;
+    }
+    const fixedPrice = getFixedServicePrice(existing.service, existing.service_option);
     const expectedAmount = fixedPrice ?? amountExpected ?? null;
+    const priceChanged = Number(existing.amount_expected || 0) !== Number(expectedAmount || 0);
+    const allowedPaymentStatusChange = ['PAID', 'REFUND_PENDING'].includes(existing.payment_status)
+      && ['REFUND_PENDING', 'REFUNDED'].includes(paymentStatus);
+    if ((paymentStatus !== existing.payment_status && !allowedPaymentStatusChange)
+      || verification !== existing.payment_verification
+      || Number(amountReceived || 0) !== Number(existing.amount_received || 0)
+      || (reference?.trim() || null) !== (existing.payment_reference || null)
+      || (priceChanged && ['AWAITING_PAYMENT', 'PAID', 'REFUND_PENDING', 'REFUNDED'].includes(existing.payment_status))
+      || (refundStatus !== existing.refund_status
+        && !(['PAID', 'REFUND_PENDING'].includes(existing.payment_status)
+          && ['INITIATED', 'COMPLETED'].includes(refundStatus)))) {
+      response.status(409).json({ error: 'Payment verification, amounts and transaction references are read-only. Use Paystack verification; only refund progress and an unpaid quotation can be edited here.' });
+      return;
+    }
+    if (paymentStatus === 'REFUNDED' && refundStatus !== 'COMPLETED') {
+      response.status(400).json({ error: 'Mark a refund as completed before setting its payment status to refunded.' });
+      return;
+    }
     const result = await pool.query(
-      `UPDATE bookings SET payment_status = $1, amount_expected = $2, amount_received = $3,
-        payment_reference = CASE WHEN amount_expected IS DISTINCT FROM $2 THEN NULL ELSE $4 END,
+      `UPDATE bookings SET payment_status = $1, amount_expected = $2,
+        payment_reference = CASE WHEN amount_expected IS DISTINCT FROM $2 THEN NULL ELSE payment_reference END,
         payment_checkout_url = CASE WHEN amount_expected IS DISTINCT FROM $2 THEN NULL ELSE payment_checkout_url END,
-        payment_verification = $5, refund_status = $6, email = COALESCE($7, email),
-        payment_date = CASE WHEN $1 IN ('PAID', 'PARTIAL') AND payment_date IS NULL THEN NOW() ELSE payment_date END
-       WHERE id = $8
+        payment_expires_at = CASE WHEN amount_expected IS DISTINCT FROM $2 THEN NULL ELSE payment_expires_at END,
+        refund_status = $3, email = COALESCE($4, email)
+       WHERE id = $5
        RETURNING id, payment_status, amount_expected, amount_received, payment_reference,
          payment_date, payment_verification, refund_status, email`,
-      [paymentStatus, expectedAmount, amountReceived ?? 0, reference?.trim() || null,
-        verification, refundStatus, email?.trim() || null, request.params.id],
+      [paymentStatus, expectedAmount, refundStatus, email?.trim() || null, request.params.id],
     );
     if (!result.rowCount) {
       response.status(404).json({ error: 'Booking not found.' });
@@ -867,14 +1094,16 @@ function constantTimeEqual(value, expected) {
   return crypto.timingSafeEqual(valueBuffer, expectedBuffer);
 }
 
-async function updateBookingStatus(pool, bookingId, status, resolution) {
+async function updateBookingStatus(pool, bookingId, status, resolution, options = {}) {
   const client = await pool.connect();
   let transactionStarted = false;
   try {
     await client.query('BEGIN');
     transactionStarted = true;
     const current = await client.query(
-      'SELECT id, status, payment_status, amount_received FROM bookings WHERE id = $1 FOR UPDATE',
+      `SELECT id, reference, status, payment_status, payment_verification, amount_received,
+        amount_expected, service
+       FROM bookings WHERE id = $1 FOR UPDATE`,
       [bookingId],
     );
     if (!current.rowCount) {
@@ -883,7 +1112,24 @@ async function updateBookingStatus(pool, bookingId, status, resolution) {
       return { httpStatus: 404, body: { error: 'Booking not found.' } };
     }
     const booking = current.rows[0];
+    if (booking.status === status && status !== 'RESCHEDULE_PROPOSED') {
+      await client.query('COMMIT');
+      transactionStarted = false;
+      return {
+        httpStatus: 200,
+        body: { id: booking.id, reference: booking.reference, status, previousStatus: status },
+      };
+    }
     const paid = booking.payment_status === 'PAID' || Number(booking.amount_received) > 0;
+    if (status === 'CONFIRMED' && Number(booking.amount_expected || 0) > 0
+      && !(booking.payment_status === 'PAID' && booking.payment_verification === 'VERIFIED')) {
+      await client.query('ROLLBACK');
+      transactionStarted = false;
+      return {
+        httpStatus: 409,
+        body: { error: 'Verify the approved payment before confirming this appointment.' },
+      };
+    }
     const needsResolution = paid && ['DECLINED', 'CANCELLED'].includes(status);
     if (needsResolution && !RESOLUTIONS.has(resolution)) {
       await client.query('ROLLBACK');
@@ -896,23 +1142,73 @@ async function updateBookingStatus(pool, bookingId, status, resolution) {
         },
       };
     }
+    if (status === 'RESCHEDULE_PROPOSED') {
+      await reserveBookingSlot(client, {
+        preferredDate: options.proposedDate,
+        preferredTime: options.proposedTime,
+        service: booking.service,
+      }, { excludeBookingId: bookingId });
+    }
     const updated = await client.query(
       `UPDATE bookings SET status = $1, resolution = $2,
         payment_status = CASE WHEN $3 = 'INITIATE_REFUND' THEN 'REFUND_PENDING' ELSE payment_status END,
-        refund_status = CASE WHEN $3 = 'INITIATE_REFUND' THEN 'INITIATED' ELSE refund_status END
-       WHERE id = $4 RETURNING id, status, resolution, payment_status, refund_status`,
-      [status, needsResolution ? resolution : null, needsResolution ? resolution : null, bookingId],
+        refund_status = CASE WHEN $3 = 'INITIATE_REFUND' THEN 'INITIATED' ELSE refund_status END,
+        decline_reason = CASE WHEN $1 = 'DECLINED' THEN NULLIF($4, '') ELSE NULL END,
+        appointment_instructions = CASE
+          WHEN $1 = 'CONFIRMED' AND $5 <> '' THEN $5 ELSE appointment_instructions END,
+        slip_token_hash = CASE WHEN $6 IS NULL THEN slip_token_hash ELSE $6 END,
+        slip_token_expires_at = CASE WHEN $6 IS NULL THEN slip_token_expires_at
+          ELSE NOW() + INTERVAL '180 days' END,
+        request_expires_at = CASE WHEN $1 NOT IN ('NEW', 'PENDING_REVIEW') THEN NULL ELSE request_expires_at END,
+        payment_expires_at = CASE WHEN $1 IN ('DECLINED', 'CANCELLED', 'CONFIRMED') THEN NULL ELSE payment_expires_at END,
+        proposed_preferred_date = CASE WHEN $1 = 'RESCHEDULE_PROPOSED' THEN $7::date ELSE NULL END,
+        proposed_preferred_time = CASE WHEN $1 = 'RESCHEDULE_PROPOSED' THEN $8::time ELSE NULL END,
+        proposed_previous_status = CASE WHEN $1 = 'RESCHEDULE_PROPOSED'
+          THEN COALESCE(proposed_previous_status, $9) ELSE NULL END,
+        proposed_response_token_hash = CASE WHEN $1 = 'RESCHEDULE_PROPOSED' THEN $10 ELSE NULL END,
+        proposed_response_expires_at = CASE WHEN $1 = 'RESCHEDULE_PROPOSED'
+          THEN NOW() + INTERVAL '48 hours' ELSE NULL END
+       WHERE id = $11
+       RETURNING id, reference, status, resolution, payment_status, refund_status`,
+      [
+        status,
+        needsResolution ? resolution : null,
+        needsResolution ? resolution : null,
+        options.declineReason || '',
+        options.appointmentInstructions || '',
+        options.slipTokenHash || null,
+        options.proposedDate || null,
+        options.proposedTime || null,
+        booking.status,
+        options.proposalTokenHash || null,
+        bookingId,
+      ],
     );
     await client.query(
       `INSERT INTO booking_status_history (id, booking_id, previous_status, status, resolution)
        VALUES ($1, $2, $3, $4, $5)`,
       [crypto.randomUUID(), bookingId, booking.status, status, needsResolution ? resolution : null],
     );
+    await client.query(
+      `INSERT INTO booking_activity_history (id, booking_id, action, details)
+       VALUES ($1, $2, 'BOOKING_STATUS_CHANGED', $3::jsonb)`,
+      [crypto.randomUUID(), bookingId, JSON.stringify({
+        previousStatus: booking.status,
+        status,
+        resolution: needsResolution ? resolution : null,
+        proposedDate: options.proposedDate || null,
+        proposedTime: options.proposedTime || null,
+      })],
+    );
     await client.query('COMMIT');
     transactionStarted = false;
     return {
       httpStatus: 200,
-      body: { ...updated.rows[0], previousStatus: booking.status },
+      body: {
+        ...updated.rows[0],
+        previousStatus: booking.status,
+        ...(status === 'RESCHEDULE_PROPOSED' ? { proposalUpdated: true } : {}),
+      },
     };
   } catch (error) {
     if (transactionStarted) await client.query('ROLLBACK');
@@ -920,6 +1216,75 @@ async function updateBookingStatus(pool, bookingId, status, resolution) {
   } finally {
     client.release();
   }
+}
+
+async function notifyBookingEvent(pool, notifications, bookingId, eventType, extra = {}) {
+  if (!notifications) return { status: 'not_configured' };
+  const result = await pool.query(
+    `SELECT id, reference, full_name, email, service, service_other,
+      preferred_date::text AS preferred_date, to_char(preferred_time, 'HH24:MI') AS preferred_time,
+      amount_expected, amount_received, payment_reference, payment_status
+     FROM bookings WHERE id = $1`,
+    [bookingId],
+  );
+  if (!result.rowCount) return { status: 'failed', error: 'Booking is unavailable for notification.' };
+  const booking = result.rows[0];
+  const { eventKey, ...eventPayload } = extra;
+  try {
+    return await notifications.enqueueAndDeliver({
+      bookingId,
+      eventKey: eventKey || `${eventType.toLowerCase()}:${bookingId}:${crypto.randomUUID()}`,
+      eventType,
+      recipient: booking.email,
+      payload: {
+        customerName: booking.full_name,
+        reference: booking.reference,
+        service: booking.service,
+        serviceOther: booking.service_other,
+        preferredDate: booking.preferred_date,
+        preferredTime: booking.preferred_time,
+        amountExpected: booking.amount_expected === null ? null : Number(booking.amount_expected),
+        amountReceived: Number(booking.amount_received || 0),
+        transactionReference: booking.payment_reference,
+        paymentStatus: booking.payment_status,
+        ...eventPayload,
+      },
+    });
+  } catch (error) {
+    console.error('Booking notification could not be queued:', error.message);
+    return { status: 'failed', error: 'The booking was updated, but its email could not be queued.' };
+  }
+}
+
+function createCustomerSlipUrl(publicSiteUrl, reference, token) {
+  try {
+    const base = new URL(publicSiteUrl);
+    if (base.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(base.hostname)) return null;
+    const slipUrl = new URL('/api/v1/booking-slip', base);
+    slipUrl.searchParams.set('reference', reference);
+    slipUrl.searchParams.set('token', token);
+    return slipUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function createProposalResponseUrl(publicSiteUrl, reference, token) {
+  try {
+    const base = new URL(publicSiteUrl);
+    if (base.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(base.hostname)) return null;
+    const responseUrl = new URL('/booking-status.html', base);
+    responseUrl.searchParams.set('reference', reference);
+    responseUrl.searchParams.set('responseToken', token);
+    return responseUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function paymentDeadline(value, hours) {
+  const deadline = value ? new Date(value) : new Date(Date.now() + hours * 60 * 60 * 1000);
+  return Number.isNaN(deadline.valueOf()) ? null : deadline.toISOString();
 }
 
 function createCombinedSubmissionQuery(type) {

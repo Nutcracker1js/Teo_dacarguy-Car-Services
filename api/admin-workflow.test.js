@@ -10,7 +10,16 @@ const authorization = `Basic ${Buffer.from(`${username}:${password}`).toString('
 const queryLog = [];
 let currentBookingStatus = 'AWAITING_APPROVAL';
 let currentPaymentStatus = 'UNPAID';
-let currentService = { service: 'MAINTENANCE', service_option: null };
+let currentService = {
+  service: 'MAINTENANCE',
+  service_option: null,
+  payment_status: 'UNPAID',
+  payment_verification: 'UNVERIFIED',
+  amount_received: '0',
+  amount_expected: null,
+  payment_reference: null,
+  refund_status: 'NONE',
+};
 let server;
 let baseUrl;
 
@@ -47,7 +56,7 @@ const pool = {
         rows: [{ id: bookingId, payment_status: values[0], amount_expected: values[1], amount_received: values[2] }],
       };
     }
-    if (sql.includes('SELECT service, service_option FROM bookings WHERE id')) {
+    if (sql.includes('SELECT service, service_option, payment_status')) {
       return { rowCount: 1, rows: [currentService] };
     }
     if (sql.replace(/\s+/g, ' ').includes('SELECT id, reference, full_name, phone, whatsapp, email, whatsapp_opt_in, service, service_other')) {
@@ -97,10 +106,19 @@ const pool = {
     return {
       async query(sql, values = []) {
         queryLog.push({ sql, values });
-        if (sql.includes('SELECT id, status, payment_status')) {
+        if (sql.includes('SELECT id, reference, status, payment_status')) {
           return {
             rowCount: 1,
-            rows: [{ id: bookingId, status: currentBookingStatus, payment_status: 'PAID', amount_received: '50000' }],
+            rows: [{
+              id: bookingId,
+              reference: 'TD-1001',
+              status: currentBookingStatus,
+              payment_status: 'PAID',
+              payment_verification: 'VERIFIED',
+              amount_expected: '50000',
+              amount_received: '50000',
+              service: 'MAINTENANCE',
+            }],
           };
         }
         if (sql.includes('UPDATE bookings SET status')) {
@@ -238,8 +256,17 @@ test('paid bookings cannot be declined without a reschedule or refund resolution
   assert.ok(queryLog.some(({ sql }) => sql.includes('INSERT INTO booking_status_history')));
 });
 
-test('payment updates do not change booking approval status', async () => {
-  currentService = { service: 'MAINTENANCE', service_option: null };
+test('admin cannot manually mark a payment as paid or verified', async () => {
+  currentService = {
+    service: 'MAINTENANCE',
+    service_option: null,
+    payment_status: 'UNPAID',
+    payment_verification: 'UNVERIFIED',
+    amount_received: '0',
+    amount_expected: null,
+    payment_reference: null,
+    refund_status: 'NONE',
+  };
   const response = await request(`/bookings/${bookingId}/payment`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -252,15 +279,21 @@ test('payment updates do not change booking approval status', async () => {
       refundStatus: 'NONE',
     }),
   });
-  assert.equal(response.status, 200);
-  assert.equal((await response.json()).payment_status, 'PAID');
-  const update = queryLog.at(-1).sql;
-  assert.match(update, /SET payment_status/);
-  assert.doesNotMatch(update, /,\s*status\s*=/);
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).error, /paystack verifies/i);
 });
 
 test('fixed tint prices are enforced by the server on payment updates', async () => {
-  currentService = { service: 'TINT', service_option: 'ceramic' };
+  currentService = {
+    service: 'TINT',
+    service_option: 'ceramic',
+    payment_status: 'UNPAID',
+    payment_verification: 'UNVERIFIED',
+    amount_received: '0',
+    amount_expected: null,
+    payment_reference: null,
+    refund_status: 'NONE',
+  };
   const response = await request(`/bookings/${bookingId}/payment`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -277,7 +310,16 @@ test('fixed tint prices are enforced by the server on payment updates', async ()
   const update = queryLog.at(-1);
   assert.ok(update.sql.includes('UPDATE bookings SET payment_status'));
   assert.equal(update.values[1], 150000);
-  currentService = { service: 'MAINTENANCE', service_option: null };
+  currentService = {
+    service: 'MAINTENANCE',
+    service_option: null,
+    payment_status: 'UNPAID',
+    payment_verification: 'UNVERIFIED',
+    amount_received: '0',
+    amount_expected: null,
+    payment_reference: null,
+    refund_status: 'NONE',
+  };
 });
 
 test('internal booking notes are saved privately', async () => {

@@ -34,7 +34,45 @@ services:
         value: /var/data/uploads
       - key: SERVE_WEBSITE
         value: "true"
+      - key: CORS_ORIGINS
+        value: https://nutcracker1js.github.io
+      - key: PUBLIC_SITE_URL
+        value: https://teo-dacarguy-car-services.onrender.com
+      - key: BOOKING_REVIEW_TTL_HOURS
+        value: "48"
+      - key: PAYMENT_EXPIRY_HOURS
+        value: "24"
       - key: ADMIN_USERNAME
         value: teo_admin
       - key: ADMIN_PASSWORD
         generateValue: true
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: NOTIFICATION_EMAIL
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_RECIPIENT
+        sync: false
+      - key: WHATSAPP_TEMPLATE_NAME
+        sync: false
+      - key: WHATSAPP_APPROVAL_TEMPLATE_NAME
+        sync: false
+      - key: WHATSAPP_TEMPLATE_LANGUAGE
+        value: en_US
+      - key: WHATSAPP_GRAPH_VERSION
+        value: v23.0
+      - key: PAYSTACK_SECRET_KEY
+        sync: false

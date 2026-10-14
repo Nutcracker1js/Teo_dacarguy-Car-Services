@@ -4,10 +4,11 @@ The customer-facing site is plain HTML, CSS and browser JavaScript. Its Node.js 
 
 ## Project layout
 
-Keep public website pages and browser assets at the repository root. The site build intentionally copies root-level HTML, CSS, JavaScript and public images into `dist/`, which is served by the API in production.
+Keep public website pages at the repository root so GitHub Pages URLs stay stable. Browser assets live under `assets/` and are copied into the API's generated `dist/` directory for production hosting.
 
-- `*.html`, `*.css` and browser `*.js`: customer pages, shared styling, and page-specific behavior.
-- `admin.html`, `admin.css` and `admin.js`: the private staff booking centre.
+- Root `*.html`: customer pages and the admin entry page. Keeping pages at the root preserves GitHub Pages URLs.
+- `assets/css/`: shared styles, catalogue/project page styles, and isolated admin styles.
+- `assets/js/`: shared site behavior, customer booking/payment scripts, the admin dashboard, and chat widget.
 - `booking-status.html` and `payment.html` with their matching scripts: customer booking lookup and checkout.
 - `api/`: Express server, API routes, database setup, integrations and automated tests. `schema.sql` defines the PostgreSQL schema.
 - `images/`: public site images and media. Customer-submitted attachments are stored separately outside the public site.
@@ -49,13 +50,16 @@ This repository includes a Render Blueprint in `render.yaml` that creates one HT
 2. Review the resources, regions, database and disk plan/costs in Render before approving creation. The Blueprint requests paid persistent resources so uploaded files and database data survive deploys.
 3. After Render reports the service healthy, open the service's `onrender.com` URL. Its `/api/health` route confirms API and database connectivity; use `/admin.html` for the inbox.
 4. Find the generated `ADMIN_PASSWORD` in the Render service's environment settings and sign in as `teo_admin`. Change the password after first sign-in by replacing the generated value with a unique secret of at least 16 characters.
-5. Set `PUBLIC_SITE_URL` to the assigned HTTPS `onrender.com` URL. Set `PAYSTACK_SECRET_KEY` to enable online checkout. Add SMTP and WhatsApp Business credentials in the Render environment settings to enable business notifications. Until each provider is configured, its feature stays unavailable; saved booking references remain available through the site.
+5. Set `PUBLIC_SITE_URL` to the service's assigned HTTPS `onrender.com` URL (the current `render.yaml` is prefilled with this service URL). Set `PAYSTACK_SECRET_KEY` to enable online checkout. To enable email, provide `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD` and `NOTIFICATION_EMAIL`; `SMTP_PORT` defaults to `587`. To enable business WhatsApp notifications, provide `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_RECIPIENT` and `WHATSAPP_TEMPLATE_NAME`. The separate approved booking message also requires `WHATSAPP_APPROVAL_TEMPLATE_NAME`. The Blueprint marks provider credentials as secrets to enter during setup; it generates a private admin password automatically. Until each provider is configured, its feature stays unavailable; saved booking references remain available through the site.
 
-The deployment build copies only root website `.html`, `.js`, `.css` files and public `images/` into `dist/`; it does not publish `.env`, the repository, or private uploaded files. The database does not accept inbound public connections. Keep a separate backup policy for PostgreSQL and uploaded files, and use HTTPS for admin access.
+If the existing Render service was created manually rather than from this Blueprint, syncing `render.yaml` will not automatically apply its settings. Add the environment variables in the Render service dashboard and redeploy. At minimum, set `SERVE_WEBSITE=true`, `PUBLIC_SITE_URL` to the service's HTTPS URL, `ADMIN_USERNAME=teo_admin`, and a unique `ADMIN_PASSWORD` of at least 16 characters. To enable payments, add `PAYSTACK_SECRET_KEY`. Email and WhatsApp warnings remain until their provider credentials and approved WhatsApp template names are added. Never use the placeholder or example values as production credentials.
+
+The GitHub Pages site at `https://nutcracker1js.github.io/Teo_dacarguy-Car-Services/` uses the Render API at `https://teo-dacarguy-car-services.onrender.com`. Browser scripts select that API automatically on the project's GitHub Pages host. The API must allow the exact origin `https://nutcracker1js.github.io` in `CORS_ORIGINS`; this origin is included in `render.yaml` and the server's built-in production allowlist. If the existing Render service was created manually, set `CORS_ORIGINS=https://nutcracker1js.github.io` in its Environment settings and redeploy the API. If GitHub Pages uses a custom domain later, add that domain's origin to `CORS_ORIGINS` as well.
+
+The Render deployment build copies root website HTML, `assets/`, the public `images/` directory, and `tint-options.json` into `dist/`; it does not publish `.env`, the repository, or private uploaded files. The database does not accept inbound public connections. Keep a separate backup policy for PostgreSQL and uploaded files, and use HTTPS for admin access.
 
 ## Live chat
 
-The public pages load the Smartsupp widget through `smartsupp.js`; the staff admin page does not. The server Content Security Policy permits the Smartsupp chat, widget and connection hosts used by the integration. Keep the widget key associated with the Smartsupp account, and disclose the third-party chat service in the site's privacy notice before launch.
 
 ## API
 
@@ -66,9 +70,11 @@ The public pages load the Smartsupp widget through `smartsupp.js`; the staff adm
 - `POST /api/v1/reviews` publishes a customer review immediately; submissions are limited to 5 per IP per hour.
 - `GET /api/health` checks API and database connectivity.
 
+The API applies an overall limit of 300 requests per IP per 15 minutes. More restrictive limits also apply: submissions 20 per 15 minutes, reviews 5 per hour, booking-status lookups 10 per 15 minutes, payments 5 per 15 minutes, and admin endpoints 120 per 15 minutes. Rate-limit responses use HTTP `429` and include standard rate-limit headers. When deployed behind Render's proxy, the API trusts one proxy hop to rate-limit by the originating client IP; keep that setting aligned with the hosting provider if the proxy topology changes. The in-memory counters reset on service restart and are not shared across multiple service instances.
+
 Both submission endpoints accept JSON or `multipart/form-data`. Attachments use the `attachments` field: up to 6 JPG, PNG, WebP, MP4 or MOV files, maximum 15 MB each. The API checks file signatures rather than trusting filenames or browser MIME types. Uploads are stored outside the website directory with randomized names; original names and MIME types are stored as database metadata. Files are not publicly served. Do not move the private upload directory beneath a public web root.
 
-Successful submissions return HTTP `201`, an opaque reference ID, `NEW` status, submission time and attachment count. Invalid input returns HTTP `400`; oversize uploads return `413`. Public submissions are limited to 20 requests per IP every 15 minutes. JSON request bodies are limited to 16 KB.
+Successful submissions return HTTP `201`, an opaque, randomly generated booking reference, `NEW` status, submission time and attachment count. Invalid input returns HTTP `400`; oversize uploads return `413`. Public submissions are limited to 20 requests per IP every 15 minutes. JSON request bodies are limited to 16 KB.
 
 Reviews are stored in PostgreSQL and displayed on the homepage after submission and on later visits. Reviews are published immediately without moderation, so the service owner should monitor submissions.
 
@@ -85,15 +91,36 @@ Never commit provider credentials. Add them only to the ignored local `.env` fil
 
 ## Admin inbox
 
-Set `ADMIN_USERNAME` and a unique `ADMIN_PASSWORD` of at least 16 characters on the API server. Open `admin.html` on the website, then sign in with those credentials. The booking centre provides database-backed attention metrics, booking search and filters, booking details, private notes and status history, separate payment/refund records, appointment calendar views, working hours, service durations, blocked dates/times, and customer review management. Mark a manual payment as paid only after setting its verification to verified. Paystack payments are verified directly with Paystack before the application records them as paid.
+Set `ADMIN_USERNAME` and a unique `ADMIN_PASSWORD` of at least 16 characters on the API server. Open `admin.html` on the website, then sign in with those credentials. The booking centre provides database-backed attention metrics, booking search and filters, booking details, private notes and status history, separate payment/refund records, appointment calendar views, working hours, service durations, blocked dates/times, and customer review management. Only a successful server-side Paystack verification can mark a payment as paid; administrators cannot set that status manually.
 
 If no custom schedule has been saved, the booking page offers standard Monday–Saturday times from 8:00 AM to 7:00 PM, using a one-hour service duration. The API hides past, blocked and overlapping times and checks availability again when a booking is submitted. Teo can customize open days, hours and service durations under **Availability & calendar**; the backend enforces those settings. If the availability service cannot be reached, the form still displays standard times and rechecks the requested time at submission. Pending review, awaiting payment, awaiting approval, approved and confirmed appointments protect their chosen time. When a paid booking is declined or cancelled, the admin must choose rescheduling or mark a refund as initiated; the application records that resolution but does not issue an external refund.
 
 Booking status and payment status are independent fields. A booking may have payment status **Paid** while its booking status remains **Awaiting approval**. Booking changes and payment updates are authenticated and recorded separately. Internal notes are visible only to staff; WhatsApp contact links open an external customer conversation.
 
-Customers can check their booking on `booking-status.html` by entering their booking reference and the phone number used for the request. The page only reveals status and appointment details after both match. Customers can pay on `payment.html`, which verifies the same details, shows the approved service and confirmed amount, and enables checkout only for an approved, unpaid booking. The payment page reuses the checkout link prepared during approval or initializes one using the email saved with the booking. Listed-price options use their server-side catalog amount automatically; Teo enters a confirmed amount only for services that require a quote. Paystack callbacks are returned to the booking-status page, where the customer can verify the transaction using their booking reference and phone number.
+Customers can check their booking on `booking-status.html` by entering their booking reference and the phone number used for the request. New booking references are generated with 80 bits of cryptographic randomness so they cannot be guessed by trying a sequence of numbers. Older bookings keep their existing references so previously sent booking and payment links continue to work; older sequential references remain more guessable and should be handled carefully. The page only reveals status and appointment details after both the reference and phone number match. Customers can pay on `payment.html`, which verifies the same details, shows the approved service and confirmed amount, and enables checkout only for an approved, unpaid booking. The payment page reuses the checkout link prepared during approval or initializes one using the email saved with the booking. Listed-price options use their server-side catalog amount automatically; Teo enters a confirmed amount only for services that require a quote. Paystack callbacks are returned to the booking-status page, where the customer can verify the transaction using their booking reference and phone number.
 
 Tint options on the services page start a booking request with the selected listed-price option. The API stores the option and derives its amount from the server-side pricing catalog; Teo does not need to enter that amount in admin. Other services without a fixed price remain manually quoted. Approval creates the checkout using the fixed listed price (or the entered quote for unpriced services). Run `npm run db:init` to apply schema updates, then set `PAYSTACK_SECRET_KEY` and an HTTPS `PUBLIC_SITE_URL` on the API server. Paystack initialization uses only the server-side confirmed booking amount; successful callbacks are verified against Paystack before payment status is marked paid. Booking approval remains independent of payment verification.
+
+## Booking, payment and customer notifications
+
+New booking requests are held for review for 48 hours by default. Once approved for payment, the customer has 24 hours to pay. Set `BOOKING_REVIEW_TTL_HOURS` and `PAYMENT_EXPIRY_HOURS` to change those durations (whole hours from 1 to 720). The expiry worker releases a payment-held appointment only after Paystack confirms that the transaction failed or was abandoned; if Paystack is unavailable or the transaction is still pending, the appointment stays reserved.
+
+The Paystack return page is not proof of payment. The API verifies the transaction with Paystack and checks its reference, booking association, NGN currency, and exact server-approved amount before recording payment. The `/api/v1/payments/webhook` endpoint also validates the Paystack signature and re-verifies events with Paystack. Repeated success events are processed idempotently. Booking confirmation remains a separate manual admin action after payment verification.
+
+Customer emails are queued in PostgreSQL and tracked for delivery. Failed messages can be retried from the admin booking details. After final confirmation, customers receive a time-limited booking-slip link; the slip contains their appointment and payment summary. When an admin proposes a new appointment time, the customer can accept or decline using the expiring response link in the email.
+
+## Render deployment checklist
+
+The Render Blueprint creates the PostgreSQL database, runs `npm run db:init` as its pre-deploy command, builds the website, and starts the API. Before accepting bookings:
+
+1. In the Render service environment, set `PAYSTACK_SECRET_KEY` to the private Paystack secret and confirm `PUBLIC_SITE_URL` is the HTTPS URL customers use. Configure the matching Paystack webhook URL as `https://<your-api-host>/api/v1/payments/webhook`.
+2. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, and `NOTIFICATION_EMAIL` for customer and business email. Add WhatsApp credentials only if that optional channel is enabled.
+3. Keep `ADMIN_USERNAME` private and replace the generated or temporary `ADMIN_PASSWORD` with a unique password of at least 16 characters. Never put secrets in the repository or frontend.
+4. Verify `DATABASE_URL` is the private Render database connection, `UPLOAD_DIR` points to the mounted private disk, and `CORS_ORIGINS` lists only the website origins that need API access.
+5. Check `/api/health`, sign in to the admin inbox, submit a test booking, verify review expiry/payment approval, test a Paystack test-mode payment and webhook, and confirm the customer email and booking-slip link work before enabling live payments.
+6. Arrange database and private-upload backups and test restoration. `npm run db:init` applies additive schema updates; review the SQL and take a backup before running it against production.
+
+The review/payment expiry values default to 48/24 hours in both the API and Render Blueprint. No additional environment variables are needed for the new workflow beyond those already listed in `.env.example` and the Render setup above.
 
 ## Production readiness
 

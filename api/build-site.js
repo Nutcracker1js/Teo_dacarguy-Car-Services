@@ -1,12 +1,10 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
-const PUBLIC_FILE_EXTENSIONS = new Set(['.html', '.js', '.css']);
-
 async function copyPublicFiles(sourceDirectory, outputDirectory) {
   const entries = await fs.readdir(sourceDirectory, { withFileTypes: true });
   const files = entries.filter((entry) => (
-    entry.isFile() && PUBLIC_FILE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())
+    entry.isFile() && path.extname(entry.name).toLowerCase() === '.html'
   ));
 
   await fs.mkdir(outputDirectory, { recursive: true });
@@ -19,6 +17,12 @@ async function copyPublicFiles(sourceDirectory, outputDirectory) {
   await fs.copyFile(
     path.join(sourceDirectory, 'tint-options.json'),
     path.join(outputDirectory, 'tint-options.json'),
+  );
+
+  await fs.cp(
+    path.join(sourceDirectory, 'assets'),
+    path.join(outputDirectory, 'assets'),
+    { recursive: true },
   );
 
   const sourceImages = path.join(sourceDirectory, 'images');

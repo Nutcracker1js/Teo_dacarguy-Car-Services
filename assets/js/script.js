@@ -5,11 +5,14 @@ const dropdownMenu = document.querySelector('#services-menu');
 const siteHeader = document.querySelector('.site-header');
 
 function updateHeaderOnScroll() {
+  if (!siteHeader) return;
   siteHeader.classList.toggle('is-scrolled', window.scrollY > 40);
 }
 
-window.addEventListener('scroll', updateHeaderOnScroll, { passive: true });
-updateHeaderOnScroll();
+if (siteHeader) {
+  window.addEventListener('scroll', updateHeaderOnScroll, { passive: true });
+  updateHeaderOnScroll();
+}
 
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -41,18 +44,24 @@ function closeDropdown() {
 }
 
 function closeNavigation() {
+  if (!menuToggle || !primaryNavigation) {
+    closeDropdown();
+    return;
+  }
   menuToggle.setAttribute('aria-expanded', 'false');
   menuToggle.setAttribute('aria-label', 'Open navigation');
   primaryNavigation.classList.remove('is-open');
   closeDropdown();
 }
 
-menuToggle.addEventListener('click', () => {
-  const isOpen = menuToggle.getAttribute('aria-expanded') === 'true';
-  menuToggle.setAttribute('aria-expanded', String(!isOpen));
-  menuToggle.setAttribute('aria-label', isOpen ? 'Open navigation' : 'Close navigation');
-  primaryNavigation.classList.toggle('is-open', !isOpen);
-});
+if (menuToggle && primaryNavigation) {
+  menuToggle.addEventListener('click', () => {
+    const isOpen = menuToggle.getAttribute('aria-expanded') === 'true';
+    menuToggle.setAttribute('aria-expanded', String(!isOpen));
+    menuToggle.setAttribute('aria-label', isOpen ? 'Open navigation' : 'Close navigation');
+    primaryNavigation.classList.toggle('is-open', !isOpen);
+  });
+}
 
 if (dropdownTrigger && dropdownMenu) {
   dropdownTrigger.addEventListener('click', () => {
@@ -70,11 +79,11 @@ document.addEventListener('click', (event) => {
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     closeNavigation();
-    menuToggle.focus();
+    menuToggle?.focus();
   }
 });
 
-primaryNavigation.querySelectorAll('a').forEach((link) => {
+primaryNavigation?.querySelectorAll('a').forEach((link) => {
   link.addEventListener('click', closeNavigation);
 });
 
@@ -82,11 +91,16 @@ window.addEventListener('resize', () => {
   if (window.innerWidth > 800) closeNavigation();
 });
 
-document.querySelector('#year').textContent = new Date().getFullYear();
+const footerYear = document.querySelector('#year');
+if (footerYear) footerYear.textContent = new Date().getFullYear();
 
 const configuredApiBaseUrl = document.querySelector('meta[name="api-base-url"]')?.content.trim() || '';
 const isLocalWebsite = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const apiBaseUrl = (configuredApiBaseUrl || (isLocalWebsite ? `${window.location.protocol}//${window.location.hostname}:3000` : ''))
+const isGitHubPages = window.location.hostname === 'nutcracker1js.github.io';
+const hostedApiBaseUrl = isGitHubPages ? 'https://teo-dacarguy-car-services.onrender.com' : '';
+const apiBaseUrl = (configuredApiBaseUrl
+  || (isLocalWebsite ? `${window.location.protocol}//${window.location.hostname}:3000` : '')
+  || hostedApiBaseUrl)
   .replace(/\/$/, '');
 const localApiHelpMessage = 'Open the website at http://localhost:3000, or add this site address to CORS_ORIGINS in .env and restart the API.';
 

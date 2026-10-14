@@ -8,7 +8,13 @@ const { rateLimit } = require('express-rate-limit');
 const { createAdminRouter } = require('./admin');
 const { getAvailableSlots, reserveBookingSlot } = require('./availability');
 const { TINT_OPTIONS, validateBooking, validateEnquiry, validateReview } = require('./validation');
-const { normalizeNigerianPhone, validEmail } = require('./payments');
+const {
+  normalizeNigerianPhone,
+  validEmail,
+  verifyPaystackSignature,
+} = require('./payments');
+const { applyVerifiedPayment, recordFailedPayment } = require('./payment-processing');
+const { canIssueBookingSlip, createBookingSlip } = require('./booking-slip');
 const { getFixedServicePrice } = require('./pricing');
 const {
   createUploadMiddleware,
@@ -24,13 +30,21 @@ function createApp({
   uploadDirectory = path.resolve(__dirname, '..', '..', 'teo-dacarguy-private-uploads'),
   sendNotifications = async () => ({ email: 'not_configured', whatsapp: 'not_configured' }),
   paymentGateway = { configured: false },
+  paystackSecretKey = '',
+  bookingReviewTtlHours = 48,
+  paymentExpiryHours = 24,
+  bookingNotifications = null,
+  publicSiteUrl = '',
   adminUsername,
   adminPassword,
-  serveWebsite = process.env.SERVE_WEBSITE === 'true',
+  trustProxy = false,
+  serveWebsite = process.env.SERVE_WEBSITE === 'true'
+    || (process.env.SERVE_WEBSITE !== 'false' && process.env.NODE_ENV === 'production'),
   publicDirectory = path.resolve(__dirname, '..', 'dist'),
 }) {
   const app = express();
   const uploads = createUploadMiddleware(uploadDirectory);
+  app.set('trust proxy', trustProxy);
   app.disable('x-powered-by');
   app.use(helmet({
     contentSecurityPolicy: {
@@ -76,7 +90,72 @@ function createApp({
       allowedHeaders: ['Authorization', 'Content-Type'],
     }));
   }
+  const webhookLimit = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 120,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+  });
+  app.post(
+    '/api/v1/payments/webhook',
+    webhookLimit,
+    express.raw({ type: 'application/json', limit: '64kb' }),
+    asyncHandler(async (request, response) => {
+      if (!verifyPaystackSignature(request.body, request.get('x-paystack-signature'), paystackSecretKey)) {
+        response.status(401).json({ error: 'Invalid Paystack webhook signature.' });
+        return;
+      }
+      let event;
+      try {
+        event = JSON.parse(request.body.toString('utf8'));
+      } catch {
+        response.status(400).json({ error: 'Webhook body must be valid JSON.' });
+        return;
+      }
+      if (!['charge.success', 'charge.failed'].includes(event.event)) {
+        response.status(200).json({ received: true, ignored: true });
+        return;
+      }
+      const transactionReference = event.data?.reference;
+      if (typeof transactionReference !== 'string'
+        || !/^[A-Za-z0-9._=-]{1,100}$/.test(transactionReference)) {
+        response.status(400).json({ error: 'Webhook transaction reference is invalid.' });
+        return;
+      }
+      const verification = await paymentGateway.verify(transactionReference);
+      if (verification.error) {
+        response.status(503).json({ error: 'Paystack verification is temporarily unavailable.' });
+        return;
+      }
+      if (event.event === 'charge.failed') {
+        const failure = await recordFailedPayment({
+          pool,
+          transaction: verification.data,
+          transactionReference,
+        });
+        response.status(200).json({ received: true, paymentStatus: failure.status });
+        return;
+      }
+      const result = await applyVerifiedPayment({
+        pool,
+        transaction: verification.data,
+        transactionReference,
+        bookingNotifications,
+      });
+      response.status(200).json({ received: true, paymentStatus: result.status });
+    }),
+  );
   app.use(express.json({ limit: '16kb', strict: true }));
+
+  const apiRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    skip: (request) => request.method === 'OPTIONS',
+    message: { error: 'Too many API requests. Please try again later.' },
+  });
+  app.use('/api', apiRateLimit);
 
   const publicSubmissionLimit = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -99,12 +178,26 @@ function createApp({
     legacyHeaders: false,
     message: { error: 'Too many status checks. Please try again later.' },
   });
+  const rescheduleResponseLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Too many reschedule responses. Please try again later.' },
+  });
   const publicPaymentLimit = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 5,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     message: { error: 'Too many payment attempts. Please try again later.' },
+  });
+  const bookingSlipLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Too many booking-slip requests. Please try again later.' },
   });
 
   app.get('/api/health', asyncHandler(async (request, response) => {
@@ -148,7 +241,9 @@ function createApp({
     const result = await pool.query(
       `SELECT reference, status, service, service_other, preferred_date::text AS preferred_date,
         to_char(preferred_time, 'HH24:MI') AS preferred_time, payment_status,
-        amount_expected, amount_received
+        amount_expected, amount_received,
+        proposed_preferred_date::text AS proposed_preferred_date,
+        to_char(proposed_preferred_time, 'HH24:MI') AS proposed_preferred_time
        FROM bookings
        WHERE reference = $1
          AND (
@@ -166,6 +261,137 @@ function createApp({
     response.json({ booking: result.rows[0] });
   }));
 
+  app.post('/api/v1/reschedule-response', rescheduleResponseLimit, asyncHandler(async (request, response) => {
+    const reference = typeof request.body?.reference === 'string' ? request.body.reference.trim().toUpperCase() : '';
+    const phone = normalizeNigerianPhone(request.body?.phone);
+    const token = typeof request.body?.responseToken === 'string' ? request.body.responseToken : '';
+    const accept = request.body?.accept;
+    if (!/^TD-[A-Z0-9-]{4,20}$/.test(reference) || !phone
+      || !/^[A-Za-z0-9_-]{43}$/.test(token) || typeof accept !== 'boolean') {
+      response.status(400).json({ error: 'The proposed appointment response is invalid.' });
+      return;
+    }
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const client = await pool.connect();
+    let notificationId = null;
+    let booking;
+    let nextStatus;
+    try {
+      await client.query('BEGIN');
+      const current = await client.query(
+        `SELECT id, reference, full_name, email, service, service_other, preferred_date::text AS preferred_date,
+          to_char(preferred_time, 'HH24:MI') AS preferred_time, proposed_preferred_date::text AS proposed_date,
+          to_char(proposed_preferred_time, 'HH24:MI') AS proposed_time, proposed_previous_status,
+          proposed_response_token_hash, proposed_response_expires_at, payment_status
+         FROM bookings
+         WHERE reference = $1
+           AND (regexp_replace(phone, '[^0-9]', '', 'g') = $2
+             OR ($2 LIKE '234%' AND regexp_replace(phone, '[^0-9]', '', 'g') = '0' || substr($2, 4)))
+           AND status = 'RESCHEDULE_PROPOSED'
+         FOR UPDATE`,
+        [reference, phone],
+      );
+      if (!current.rowCount || current.rows[0].proposed_response_token_hash !== tokenHash
+        || !current.rows[0].proposed_response_expires_at
+        || new Date(current.rows[0].proposed_response_expires_at) <= new Date()) {
+        await client.query('ROLLBACK');
+        response.status(404).json({ error: 'The reschedule proposal is not available. Contact Teo for help.' });
+        return;
+      }
+      booking = current.rows[0];
+      nextStatus = accept
+        ? booking.payment_status === 'PAID' ? 'AWAITING_APPROVAL' : booking.proposed_previous_status
+        : booking.proposed_previous_status;
+      const updated = await client.query(
+        `UPDATE bookings SET status = $1,
+          preferred_date = CASE WHEN $2 THEN proposed_preferred_date ELSE preferred_date END,
+          preferred_time = CASE WHEN $2 THEN proposed_preferred_time ELSE preferred_time END,
+          proposed_preferred_date = NULL, proposed_preferred_time = NULL,
+          proposed_previous_status = NULL, proposed_response_token_hash = NULL,
+          proposed_response_expires_at = NULL
+         WHERE id = $3 RETURNING status`,
+        [nextStatus || 'PENDING_REVIEW', accept, booking.id],
+      );
+      nextStatus = updated.rows[0].status;
+      await client.query(
+        `INSERT INTO booking_status_history (id, booking_id, previous_status, status)
+         VALUES ($1, $2, 'RESCHEDULE_PROPOSED', $3)`,
+        [crypto.randomUUID(), booking.id, nextStatus],
+      );
+      await client.query(
+        `INSERT INTO booking_activity_history (id, booking_id, action, details)
+         VALUES ($1, $2, $3, $4::jsonb)`,
+        [crypto.randomUUID(), booking.id, accept ? 'RESCHEDULE_ACCEPTED' : 'RESCHEDULE_DECLINED',
+          JSON.stringify({ proposedDate: booking.proposed_date, proposedTime: booking.proposed_time })],
+      );
+      if (bookingNotifications) {
+        notificationId = await bookingNotifications.enqueue(client, {
+          bookingId: booking.id,
+          eventKey: `reschedule_response:${booking.id}:${crypto.randomUUID()}`,
+          eventType: accept ? 'BOOKING_RESCHEDULED' : 'RESCHEDULE_PROPOSAL_DECLINED',
+          recipient: booking.email,
+          payload: {
+            customerName: booking.full_name,
+            reference: booking.reference,
+            service: booking.service,
+            serviceOther: booking.service_other,
+            preferredDate: accept ? booking.proposed_date : booking.preferred_date,
+            preferredTime: accept ? booking.proposed_time : booking.preferred_time,
+            proposedDate: booking.proposed_date,
+            proposedTime: booking.proposed_time,
+          },
+        });
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    const email = bookingNotifications && notificationId
+      ? await bookingNotifications.deliver(notificationId)
+      : { status: 'not_configured' };
+    response.set('Cache-Control', 'no-store');
+    response.json({ accepted: accept, status: nextStatus, customerEmail: email });
+  }));
+
+  app.get('/api/v1/booking-slip', bookingSlipLimit, asyncHandler(async (request, response) => {
+    const reference = typeof request.query.reference === 'string'
+      ? request.query.reference.trim().toUpperCase()
+      : '';
+    const token = typeof request.query.token === 'string' ? request.query.token : '';
+    if (!/^TD-[A-Z0-9-]{4,20}$/.test(reference) || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
+      response.status(404).json({ error: 'Booking slip not found or no longer available.' });
+      return;
+    }
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const result = await pool.query(
+      `SELECT reference, full_name, phone, email, service, service_other, vehicle_make, vehicle_model,
+        vehicle_year, registration, preferred_date::text AS preferred_date,
+        to_char(preferred_time, 'HH24:MI') AS preferred_time, location, location_other,
+        appointment_instructions, status, payment_status, payment_verification, amount_expected,
+        amount_received, payment_reference
+       FROM bookings
+       WHERE reference = $1 AND slip_token_hash = $2 AND slip_token_expires_at > NOW()
+         AND status = 'CONFIRMED'`,
+      [reference, tokenHash],
+    );
+    if (!result.rowCount || !canIssueBookingSlip(result.rows[0])) {
+      response.status(404).json({ error: 'Booking slip not found or no longer available.' });
+      return;
+    }
+    const pdf = await createBookingSlip(result.rows[0]);
+    response.set({
+      'Cache-Control': 'private, no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="booking-${reference}.pdf"`,
+    });
+    response.send(pdf);
+  }));
+
   app.post('/api/v1/payments/initialize', publicPaymentLimit, asyncHandler(async (request, response) => {
     const reference = typeof request.body?.reference === 'string' ? request.body.reference.trim().toUpperCase() : '';
     const phone = normalizeNigerianPhone(request.body?.phone);
@@ -175,7 +401,7 @@ function createApp({
     }
     const lookup = await pool.query(
       `SELECT id, reference, status, payment_status, amount_expected, email,
-        payment_reference, payment_checkout_url
+        payment_reference, payment_checkout_url, payment_expires_at
        FROM bookings WHERE reference = $1
          AND (
            regexp_replace(phone, '[^0-9]', '', 'g') = $2
@@ -189,7 +415,7 @@ function createApp({
       return;
     }
     const booking = lookup.rows[0];
-    if (!['APPROVED', 'CONFIRMED'].includes(booking.status)) {
+    if (booking.status !== 'APPROVED') {
       response.status(409).json({ error: 'Payment is available only after Teo approves your booking.' });
       return;
     }
@@ -201,11 +427,24 @@ function createApp({
       response.status(409).json({ error: 'Online checkout is unavailable for this payment status. Contact Teo for assistance.' });
       return;
     }
-    if (booking.payment_status === 'AWAITING_PAYMENT'
-      && booking.payment_reference
-      && isPaystackCheckoutUrl(booking.payment_checkout_url)) {
-      response.set('Cache-Control', 'no-store');
-      response.json({ authorizationUrl: booking.payment_checkout_url });
+    if (booking.payment_status === 'AWAITING_PAYMENT') {
+      if (booking.payment_expires_at && new Date(booking.payment_expires_at) <= new Date()) {
+        response.status(409).json({ error: 'The payment period has ended. Paystack must be checked before another link is created.' });
+        return;
+      }
+      if (booking.payment_reference && isPaystackCheckoutUrl(booking.payment_checkout_url)) {
+        if (!booking.payment_expires_at) {
+          await pool.query(
+            `UPDATE bookings SET payment_expires_at = NOW() + ($1 * INTERVAL '1 hour')
+             WHERE id = $2 AND payment_reference = $3`,
+            [paymentExpiryHours, booking.id, booking.payment_reference],
+          );
+        }
+        response.set('Cache-Control', 'no-store');
+        response.json({ authorizationUrl: booking.payment_checkout_url });
+        return;
+      }
+      response.status(409).json({ error: 'The current payment session needs to be checked before another checkout can be created.' });
       return;
     }
     if (!paymentGateway.configured) {
@@ -223,10 +462,10 @@ function createApp({
     }
     const savedReference = await pool.query(
       `UPDATE bookings SET payment_status = 'AWAITING_PAYMENT', payment_reference = $1,
-        payment_checkout_url = $2
-       WHERE id = $3 AND status IN ('APPROVED', 'CONFIRMED') AND payment_status <> 'PAID'
+        payment_checkout_url = $2, payment_expires_at = NOW() + ($3 * INTERVAL '1 hour')
+       WHERE id = $4 AND status = 'APPROVED' AND payment_status <> 'PAID'
        RETURNING id`,
-      [checkout.data.reference, checkout.data.authorizationUrl, booking.id],
+      [checkout.data.reference, checkout.data.authorizationUrl, paymentExpiryHours, booking.id],
     );
     if (!savedReference.rowCount) {
       response.status(409).json({ error: 'The booking changed while starting checkout. Check its status and try again.' });
@@ -262,12 +501,12 @@ function createApp({
       return;
     }
     const booking = lookup.rows[0];
-    if (!['APPROVED', 'CONFIRMED'].includes(booking.status)) {
-      response.status(409).json({ error: 'The booking must be approved before payment can be verified.' });
-      return;
-    }
     if (booking.payment_status === 'PAID') {
       response.json({ paymentStatus: 'PAID' });
+      return;
+    }
+    if (!['APPROVED', 'AWAITING_PAYMENT'].includes(booking.status)) {
+      response.status(409).json({ error: 'The booking must be approved before payment can be verified.' });
       return;
     }
     const verification = await paymentGateway.verify(transactionReference);
@@ -276,6 +515,16 @@ function createApp({
       return;
     }
     const transaction = verification.data;
+    if (['failed', 'abandoned'].includes(transaction.status)) {
+      const failed = await recordFailedPayment({ pool, transaction, transactionReference });
+      response.set('Cache-Control', 'no-store');
+      response.json({ paymentStatus: failed.status });
+      return;
+    }
+    if (transaction.status !== 'success') {
+      response.status(409).json({ error: 'Paystack has not completed this payment yet. Check again shortly.' });
+      return;
+    }
     const expectedKobo = Math.round(Number(booking.amount_expected) * 100);
     if (transaction.status !== 'success' || transaction.currency !== 'NGN'
       || transaction.amount !== expectedKobo
@@ -283,19 +532,17 @@ function createApp({
       response.status(409).json({ error: 'Paystack has not verified a successful payment for the exact booking amount.' });
       return;
     }
-    const updated = await pool.query(
-      `UPDATE bookings SET payment_status = 'PAID', amount_received = $1,
-        payment_verification = 'VERIFIED', payment_date = COALESCE(payment_date, NOW())
-       WHERE id = $2 AND payment_reference = $3 AND status IN ('APPROVED', 'CONFIRMED')
-       RETURNING payment_status`,
-      [transaction.amount / 100, booking.id, transactionReference],
-    );
-    if (!updated.rowCount) {
-      response.status(409).json({ error: 'The booking changed while the payment was being verified. Contact Teo to confirm your payment.' });
-      return;
-    }
+    const updated = await applyVerifiedPayment({
+      pool,
+      transaction,
+      transactionReference,
+      bookingNotifications,
+    });
     response.set('Cache-Control', 'no-store');
-    response.json({ paymentStatus: updated.rows[0].payment_status });
+    response.json({
+      paymentStatus: updated.status,
+      bookingStatus: updated.bookingStatus,
+    });
   }));
 
   app.post('/api/v1/reviews', publicReviewLimit, asyncHandler(async (request, response) => {
@@ -324,6 +571,7 @@ function createApp({
       uploadType: 'enquiry',
       uploadDirectory: uploads.privateDirectory,
       sendNotifications,
+      bookingNotifications,
       insert: (id, data) => ({
         sql: `INSERT INTO enquiries (
           id, full_name, phone, whatsapp, email, enquiry_type, description,
@@ -348,17 +596,19 @@ function createApp({
       uploadType: 'booking',
       uploadDirectory: uploads.privateDirectory,
       sendNotifications,
+      bookingNotifications,
       beforeInsert: (client, data) => reserveBookingSlot(client, data),
       insert: (id, data) => ({
         sql: `INSERT INTO bookings (
-          id, full_name, phone, whatsapp, vehicle_make, vehicle_model, vehicle_year,
+          id, reference, full_name, phone, whatsapp, vehicle_make, vehicle_model, vehicle_year,
           registration, service, service_other, preferred_date, preferred_time,
           location, location_other, details, policy_accepted, policy_version, email, whatsapp_opt_in,
-          service_option, amount_expected
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+          service_option, amount_expected, request_expires_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
         RETURNING id, reference, status, created_at`,
         values: [
-          id, data.fullName, data.phone, data.whatsapp, data.make, data.model,
+          id, `TD-${crypto.randomBytes(10).toString('hex').toUpperCase()}`,
+          data.fullName, data.phone, data.whatsapp, data.make, data.model,
           data.year, data.registration, data.service, data.serviceOther,
           data.preferredDate, data.preferredTime, data.location, data.locationOther,
           [
@@ -372,6 +622,7 @@ function createApp({
           data.whatsappOptIn === true,
           data.tintOption,
           getFixedServicePrice(data.service, data.tintOption),
+          new Date(Date.now() + bookingReviewTtlHours * 60 * 60 * 1000),
         ],
       }),
     }),
@@ -383,6 +634,9 @@ function createApp({
     password: adminPassword,
     privateDirectory: uploads.privateDirectory,
     paymentGateway,
+    bookingNotifications,
+    publicSiteUrl,
+    paymentExpiryHours,
   }));
 
   if (serveWebsite) {
@@ -421,7 +675,7 @@ function createApp({
       response.status(413).json({ error: 'The request is too large.' });
       return;
     }
-    if ([400, 409, 503].includes(error.status)) {
+    if ([400, 404, 409, 503].includes(error.status)) {
       response.status(error.status).json({ error: error.message });
       return;
     }
@@ -444,6 +698,7 @@ function createSubmissionHandler({
   uploadType,
   uploadDirectory,
   sendNotifications,
+  bookingNotifications,
   beforeInsert,
   insert,
 }) {
@@ -471,6 +726,7 @@ function createSubmissionHandler({
     let client;
     let transactionStarted = false;
     let movedFiles = [];
+    let customerNotificationId = null;
     try {
       client = await pool.connect();
       const id = crypto.randomUUID();
@@ -485,6 +741,22 @@ function createSubmissionHandler({
            VALUES ($1, $2, NULL, $3)`,
           [crypto.randomUUID(), result.rows[0].id, result.rows[0].status],
         );
+        if (bookingNotifications) {
+          customerNotificationId = await bookingNotifications.enqueue(client, {
+            bookingId: result.rows[0].id,
+            eventKey: `booking_received:${result.rows[0].id}`,
+            eventType: 'BOOKING_RECEIVED',
+            recipient: data.email,
+            payload: {
+              customerName: data.fullName,
+              reference: result.rows[0].reference,
+              service: data.service,
+              serviceOther: data.serviceOther,
+              preferredDate: data.preferredDate,
+              preferredTime: data.preferredTime,
+            },
+          });
+        }
       }
       movedFiles = await persistUploads(client, inspected, uploadType, id, uploadDirectory);
       await client.query('COMMIT');
@@ -499,6 +771,15 @@ function createSubmissionHandler({
         console.error('Submission notification service failed:', error.message);
         notifications = { email: 'failed', whatsapp: 'failed' };
       }
+      let customerEmail = { status: 'not_configured' };
+      if (bookingNotifications && customerNotificationId) {
+        try {
+          customerEmail = await bookingNotifications.deliver(customerNotificationId);
+        } catch (error) {
+          console.error('Queued customer email could not be delivered; it remains available for retry:', error.message);
+          customerEmail = { status: 'failed' };
+        }
+      }
       response.status(201).json({
         id: result.rows[0].id,
         ...(result.rows[0].reference ? { reference: result.rows[0].reference } : {}),
@@ -506,6 +787,7 @@ function createSubmissionHandler({
         submittedAt: result.rows[0].created_at,
         attachmentCount: inspected.length,
         notifications,
+        ...(uploadType === 'booking' ? { customerEmail } : {}),
       });
     } catch (error) {
       if (transactionStarted) {

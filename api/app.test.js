@@ -15,6 +15,7 @@ let existingCheckoutReady = false;
 let checkoutPaymentStatus = 'UNPAID';
 let paymentVerification = {
   status: 'success',
+  reference: 'paystack-test-01',
   currency: 'NGN',
   amount: 8000000,
   metadata: { booking_reference: 'TD-TEST1001' },
@@ -149,6 +150,35 @@ const pool = {
     return {
       async query(sql, values = []) {
         if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [] };
+        if (sql.includes('SELECT id, reference, status, payment_status, payment_reference')) {
+          return {
+            rowCount: 1,
+            rows: [{
+              id: 'booking-test-id',
+              reference: 'TD-TEST1001',
+              status: 'APPROVED',
+              payment_status: 'AWAITING_PAYMENT',
+              payment_reference: 'paystack-test-01',
+              payment_verification: 'UNVERIFIED',
+              amount_expected: '80000',
+              email: 'customer@example.com',
+              full_name: 'Ada Customer',
+              service: 'TINT',
+              service_other: null,
+              preferred_date: '2027-01-20',
+              preferred_time: '10:30',
+            }],
+          };
+        }
+        if (sql.includes('INSERT INTO paystack_webhook_receipts')) {
+          return { rowCount: 1, rows: [{ event_key: values[0] }] };
+        }
+        if (sql.includes("SET status = 'AWAITING_APPROVAL'")) {
+          return {
+            rowCount: 1,
+            rows: [{ status: 'AWAITING_APPROVAL', payment_status: 'PAID', amount_received: 80000 }],
+          };
+        }
         if (sql.includes('pg_advisory_xact_lock')) return { rows: [] };
         if (sql.includes('COUNT(*)::int AS total FROM booking_working_hours')) {
           return { rows: [{ total: 7 }] };
@@ -168,6 +198,7 @@ const pool = {
         return {
           rows: [{
             id: values[0],
+            ...(sql.includes('INSERT INTO bookings') ? { reference: values[1] } : {}),
             status: 'NEW',
             created_at: '2026-10-07T14:00:00.000Z',
           }],
@@ -217,11 +248,13 @@ let baseUrl;
 before(async () => {
   server = createApp({
     pool,
+    trustProxy: 1,
     corsOrigins: [
       'http://localhost:8080',
       'http://127.0.0.1:8080',
       'http://localhost:8088',
       'http://127.0.0.1:8088',
+      'https://nutcracker1js.github.io',
     ],
     uploadDirectory: await uploadRootPromise,
     adminUsername: 'test-admin',
@@ -260,13 +293,14 @@ test('health endpoint confirms database availability', async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { status: 'ok' });
   const policy = response.headers.get('content-security-policy');
-  assert.match(policy, /frame-src 'self' https:\/\/maps\.google\.com https:\/\/www\.google\.com https:\/\/\*\.smartsupp\.com https:\/\/\*\.smartsuppchat\.com https:\/\/\*\.smartsuppcdn\.com/);
+  assert.match(policy, /frame-src 'self' https:\/\/maps\.google\.com https:\/\/www\.google\.com/);
   assert.doesNotMatch(policy, /frame-src[^;]*\s\*(?:\s|;)/);
-  assert.match(policy, /script-src 'self' https:\/\/www\.smartsuppchat\.com/);
+  assert.match(policy, /script-src[^;]*https:\/\/www\.smartsuppchat\.com/);
   assert.match(policy, /script-src[^;]*https:\/\/\*\.smartsuppcdn\.com/);
   assert.match(policy, /connect-src[^;]*wss:\/\/\*\.smartsupp\.com/);
   assert.match(policy, /connect-src[^;]*https:\/\/\*\.smartsuppcdn\.com/);
-  assert.match(policy, /img-src 'self' data: https:\/\/\*\.smartsupp\.com/);
+  assert.match(policy, /frame-src[^;]*https:\/\/\*\.smartsuppchat\.com/);
+  assert.match(policy, /img-src[^;]*https:\/\/\*\.smartsuppcdn\.com/);
 });
 
 test('customer can check an approved booking using reference and matching phone', async () => {
@@ -355,10 +389,16 @@ test('Paystack verification marks only a successful exact payment as paid', asyn
     }),
   });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { paymentStatus: 'PAID' });
+  assert.deepEqual(await response.json(), { paymentStatus: 'PAID', bookingStatus: 'AWAITING_APPROVAL' });
   assert.equal(paymentVerifications.at(-1), 'paystack-test-01');
 
-  paymentVerification = { status: 'success', currency: 'NGN', amount: 100, metadata: { booking_reference: 'TD-TEST1001' } };
+  paymentVerification = {
+    status: 'success',
+    reference: 'paystack-test-01',
+    currency: 'NGN',
+    amount: 100,
+    metadata: { booking_reference: 'TD-TEST1001' },
+  };
   const mismatched = await fetch(`${baseUrl}/api/v1/payments/verify`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -371,6 +411,7 @@ test('Paystack verification marks only a successful exact payment as paid', asyn
   assert.equal(mismatched.status, 409);
   paymentVerification = {
     status: 'success',
+    reference: 'paystack-test-01',
     currency: 'NGN',
     amount: 8000000,
     metadata: { booking_reference: 'TD-TEST1001' },
@@ -403,6 +444,56 @@ test('configured local preview origins can access the public review API', async 
     headers: { Origin: 'http://untrusted.example' },
   });
   assert.equal(blocked.headers.get('access-control-allow-origin'), null);
+});
+
+test('GitHub Pages can access the public API when its origin is allowed', async () => {
+  const allowed = await fetch(`${baseUrl}/api/v1/reviews`, {
+    headers: { Origin: 'https://nutcracker1js.github.io' },
+  });
+  assert.equal(allowed.status, 200);
+  assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://nutcracker1js.github.io');
+
+  const preflight = await fetch(`${baseUrl}/api/v1/bookings`, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: 'https://nutcracker1js.github.io',
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'content-type',
+    },
+  });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), 'https://nutcracker1js.github.io');
+  assert.match(preflight.headers.get('access-control-allow-methods'), /POST/);
+});
+
+test('API rate limits are counted per forwarded client IP and expose standard headers', async () => {
+  const first = await fetch(`${baseUrl}/api/v1/reviews`, {
+    headers: { 'X-Forwarded-For': '198.51.100.24' },
+  });
+  const second = await fetch(`${baseUrl}/api/v1/reviews`, {
+    headers: { 'X-Forwarded-For': '198.51.100.24' },
+  });
+  const otherClient = await fetch(`${baseUrl}/api/v1/reviews`, {
+    headers: { 'X-Forwarded-For': '198.51.100.25' },
+  });
+
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(otherClient.status, 200);
+  assert.match(first.headers.get('ratelimit'), /limit=300/);
+  assert.match(second.headers.get('ratelimit'), /remaining=298/);
+  assert.match(otherClient.headers.get('ratelimit'), /remaining=299/);
+});
+
+test('API-wide rate limit rejects requests over its window allowance', async () => {
+  let lastResponse;
+  for (let requestCount = 0; requestCount < 301; requestCount += 1) {
+    lastResponse = await fetch(`${baseUrl}/api/health`, {
+      headers: { 'X-Forwarded-For': '198.51.100.26' },
+    });
+  }
+  assert.equal(lastResponse.status, 429);
+  assert.deepEqual(await lastResponse.json(), { error: 'Too many API requests. Please try again later.' });
 });
 
 test('review API publishes valid reviews and lists persisted reviews', async () => {
@@ -490,10 +581,14 @@ test('optional website hosting serves only built public files beside the API', a
   const sourceDirectory = path.join(publicSiteRoot, 'source');
   const publicDirectory = path.join(publicSiteRoot, 'dist');
   await fs.mkdir(sourceDirectory);
+  await fs.mkdir(path.join(sourceDirectory, 'assets', 'css'), { recursive: true });
+  await fs.mkdir(path.join(sourceDirectory, 'assets', 'js'), { recursive: true });
   await fs.writeFile(path.join(sourceDirectory, 'index.html'), '<!doctype html><title>Public site</title>');
   await fs.writeFile(path.join(sourceDirectory, 'admin.html'), '<!doctype html><title>Admin page</title>');
   await fs.writeFile(path.join(sourceDirectory, 'package.json'), '{"private":true}');
   await fs.writeFile(path.join(sourceDirectory, 'tint-options.json'), '{"sample":{"label":"Sample tint","amountNgn":1}}');
+  await fs.writeFile(path.join(sourceDirectory, 'assets', 'css', 'styles.css'), 'body { color: black; }');
+  await fs.writeFile(path.join(sourceDirectory, 'assets', 'js', 'script.js'), 'window.siteReady = true;');
   await buildSite(sourceDirectory, publicDirectory);
   const app = createApp({
     pool,
@@ -515,7 +610,46 @@ test('optional website hosting serves only built public files beside the API', a
     const tintOptions = await fetch(`${origin}/tint-options.json`);
     assert.equal(tintOptions.status, 200);
     assert.deepEqual(await tintOptions.json(), { sample: { label: 'Sample tint', amountNgn: 1 } });
+    const stylesheet = await fetch(`${origin}/assets/css/styles.css`);
+    assert.equal(stylesheet.status, 200);
+    assert.match(await stylesheet.text(), /color: black/);
+    const browserScript = await fetch(`${origin}/assets/js/script.js`);
+    assert.equal(browserScript.status, 200);
+    assert.match(await browserScript.text(), /siteReady/);
     assert.equal((await fetch(`${origin}/package.json`)).status, 404);
+  } finally {
+    await new Promise((resolve, reject) => hostedServer.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test('production serves the website by default when SERVE_WEBSITE is unset', async () => {
+  const publicSiteRoot = await publicSiteRootPromise;
+  const publicDirectory = path.join(publicSiteRoot, 'production-dist');
+  await fs.mkdir(publicDirectory);
+  await fs.writeFile(path.join(publicDirectory, 'index.html'), '<!doctype html><title>Production site</title>');
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalServeWebsite = process.env.SERVE_WEBSITE;
+  process.env.NODE_ENV = 'production';
+  delete process.env.SERVE_WEBSITE;
+  let app;
+  try {
+    app = createApp({
+      pool,
+      publicDirectory,
+      uploadDirectory: await uploadRootPromise,
+    });
+  } finally {
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+    if (originalServeWebsite === undefined) delete process.env.SERVE_WEBSITE;
+    else process.env.SERVE_WEBSITE = originalServeWebsite;
+  }
+  const hostedServer = app.listen(0);
+  await new Promise((resolve) => hostedServer.once('listening', resolve));
+  try {
+    const website = await fetch(`http://127.0.0.1:${hostedServer.address().port}/`);
+    assert.equal(website.status, 200);
+    assert.match(await website.text(), /Production site/);
   } finally {
     await new Promise((resolve, reject) => hostedServer.close((error) => error ? reject(error) : resolve()));
   }
@@ -743,12 +877,14 @@ test('valid booking is saved with its requested service and date', async () => {
   const result = await response.json();
   assert.equal(response.status, 201);
   assert.equal(result.status, 'NEW');
+  assert.match(result.reference, /^TD-[A-F0-9]{20}$/);
   const savedBooking = saved.filter((item) => item.sql.includes('INSERT INTO bookings')).at(-1);
-  assert.equal(savedBooking.values[10], '2027-01-20');
-  assert.equal(savedBooking.values[6], latestAllowedVehicleYear);
-  assert.equal(savedBooking.values[17], 'ada@example.test');
-  assert.equal(savedBooking.values[18], true);
-  assert.equal(savedBooking.values[3], '+234 809 876 5432');
+  assert.equal(savedBooking.values[1], result.reference);
+  assert.equal(savedBooking.values[11], '2027-01-20');
+  assert.equal(savedBooking.values[7], latestAllowedVehicleYear);
+  assert.equal(savedBooking.values[18], 'ada@example.test');
+  assert.equal(savedBooking.values[19], true);
+  assert.equal(savedBooking.values[4], '+234 809 876 5432');
 });
 
 test('tint booking saves its selected option and server-priced amount', async () => {
@@ -770,13 +906,16 @@ test('tint booking saves its selected option and server-priced amount', async ()
       policyAccepted: true,
     }),
   });
+  const result = await response.json();
   assert.equal(response.status, 201);
+  assert.match(result.reference, /^TD-[A-F0-9]{20}$/);
   const savedBooking = saved.filter((item) => item.sql.includes('INSERT INTO bookings')).at(-1);
-  assert.equal(savedBooking.values[19], 'ceramic');
-  assert.equal(savedBooking.values[20], 150000);
-  assert.match(savedBooking.values[14], /Ceramic colour options/);
-  assert.match(savedBooking.values[14], /₦150,000/);
-  assert.match(savedBooking.values[14], /payment is due only after booking approval/i);
+  assert.equal(savedBooking.values[1], result.reference);
+  assert.equal(savedBooking.values[20], 'ceramic');
+  assert.equal(savedBooking.values[21], 150000);
+  assert.match(savedBooking.values[15], /Ceramic colour options/);
+  assert.match(savedBooking.values[15], /₦150,000/);
+  assert.match(savedBooking.values[15], /payment is due only after booking approval/i);
 });
 
 test('booking rejects unknown tint options and tint options on other services', async () => {

@@ -1,4 +1,17 @@
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const crypto = require('node:crypto');
+
+function verifyPaystackSignature(rawBody, signature, secretKey) {
+  if (!Buffer.isBuffer(rawBody) || typeof signature !== 'string'
+    || !/^[a-f0-9]{128}$/i.test(signature) || typeof secretKey !== 'string' || !secretKey) {
+    return false;
+  }
+  const expected = crypto.createHmac('sha512', secretKey).update(rawBody).digest('hex');
+  const suppliedBytes = Buffer.from(signature.toLowerCase(), 'hex');
+  const expectedBytes = Buffer.from(expected, 'hex');
+  return suppliedBytes.length === expectedBytes.length
+    && crypto.timingSafeEqual(suppliedBytes, expectedBytes);
+}
 
 function createPaystackGateway(environment = process.env, fetchImplementation = fetch) {
   const secretKey = environment.PAYSTACK_SECRET_KEY || '';
@@ -86,4 +99,9 @@ function validEmail(value) {
   return typeof value === 'string' && value.length <= 254 && EMAIL_PATTERN.test(value.trim());
 }
 
-module.exports = { createPaystackGateway, normalizeNigerianPhone, validEmail };
+module.exports = {
+  createPaystackGateway,
+  normalizeNigerianPhone,
+  validEmail,
+  verifyPaystackSignature,
+};

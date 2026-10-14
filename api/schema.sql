@@ -13,11 +13,9 @@ CREATE TABLE IF NOT EXISTS enquiries (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE SEQUENCE IF NOT EXISTS booking_reference_seq START WITH 1001;
-
 CREATE TABLE IF NOT EXISTS bookings (
   id UUID PRIMARY KEY,
-  reference VARCHAR(24) DEFAULT ('TD-' || nextval('booking_reference_seq')::text),
+  reference VARCHAR(24) DEFAULT ('TD-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 20))),
   full_name VARCHAR(120) NOT NULL,
   phone VARCHAR(32) NOT NULL,
   whatsapp VARCHAR(32),
@@ -47,6 +45,17 @@ CREATE TABLE IF NOT EXISTS bookings (
   payment_verification VARCHAR(24) NOT NULL DEFAULT 'UNVERIFIED',
   refund_status VARCHAR(24) NOT NULL DEFAULT 'NONE',
   resolution VARCHAR(24),
+  request_expires_at TIMESTAMPTZ,
+  payment_expires_at TIMESTAMPTZ,
+  slip_token_hash CHAR(64),
+  slip_token_expires_at TIMESTAMPTZ,
+  proposed_preferred_date DATE,
+  proposed_preferred_time TIME,
+  proposed_previous_status VARCHAR(24),
+  proposed_response_token_hash CHAR(64),
+  proposed_response_expires_at TIMESTAMPTZ,
+  appointment_instructions VARCHAR(2000),
+  decline_reason VARCHAR(1000),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -54,7 +63,7 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reference VARCHAR(24);
 UPDATE bookings
 SET reference = 'TD-' || upper(substr(replace(id::text, '-', ''), 1, 12))
 WHERE reference IS NULL;
-ALTER TABLE bookings ALTER COLUMN reference SET DEFAULT ('TD-' || nextval('booking_reference_seq')::text);
+ALTER TABLE bookings ALTER COLUMN reference SET DEFAULT ('TD-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 20)));
 CREATE UNIQUE INDEX IF NOT EXISTS bookings_reference_idx ON bookings (reference);
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS policy_accepted BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS policy_version VARCHAR(160) NOT NULL DEFAULT 'Booking, Cancellation & Refund Policy v1';
@@ -88,6 +97,17 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_date TIMESTAMPTZ;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_verification VARCHAR(24) NOT NULL DEFAULT 'UNVERIFIED';
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS refund_status VARCHAR(24) NOT NULL DEFAULT 'NONE';
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS resolution VARCHAR(24);
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS request_expires_at TIMESTAMPTZ;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_expires_at TIMESTAMPTZ;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS slip_token_hash CHAR(64);
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS slip_token_expires_at TIMESTAMPTZ;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS proposed_preferred_date DATE;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS proposed_preferred_time TIME;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS proposed_previous_status VARCHAR(24);
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS proposed_response_token_hash CHAR(64);
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS proposed_response_expires_at TIMESTAMPTZ;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS appointment_instructions VARCHAR(2000);
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS decline_reason VARCHAR(1000);
 
 CREATE TABLE IF NOT EXISTS booking_status_history (
   id UUID PRIMARY KEY,
@@ -102,6 +122,36 @@ CREATE TABLE IF NOT EXISTS booking_internal_notes (
   id UUID PRIMARY KEY,
   booking_id UUID NOT NULL REFERENCES bookings (id) ON DELETE CASCADE,
   note VARCHAR(3000) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS booking_notifications (
+  id UUID PRIMARY KEY,
+  booking_id UUID NOT NULL REFERENCES bookings (id) ON DELETE CASCADE,
+  event_key VARCHAR(200) NOT NULL UNIQUE,
+  event_type VARCHAR(48) NOT NULL,
+  recipient VARCHAR(254),
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  delivery_status VARCHAR(16) NOT NULL DEFAULT 'PENDING'
+    CHECK (delivery_status IN ('PENDING', 'SENDING', 'SENT', 'FAILED')),
+  attempts SMALLINT NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  last_error VARCHAR(1000),
+  queued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  claimed_at TIMESTAMPTZ,
+  sent_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS paystack_webhook_receipts (
+  event_key VARCHAR(200) PRIMARY KEY,
+  transaction_reference VARCHAR(160) NOT NULL,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS booking_activity_history (
+  id UUID PRIMARY KEY,
+  booking_id UUID NOT NULL REFERENCES bookings (id) ON DELETE CASCADE,
+  action VARCHAR(48) NOT NULL,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -167,6 +217,11 @@ CREATE INDEX IF NOT EXISTS bookings_schedule_idx ON bookings (preferred_date, pr
   WHERE preferred_time IS NOT NULL AND status NOT IN ('DECLINED', 'CANCELLED', 'COMPLETED', 'CLOSED');
 CREATE INDEX IF NOT EXISTS booking_status_history_booking_idx ON booking_status_history (booking_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS booking_internal_notes_booking_idx ON booking_internal_notes (booking_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS booking_notifications_pending_idx
+  ON booking_notifications (delivery_status, queued_at)
+  WHERE delivery_status IN ('PENDING', 'FAILED');
+CREATE INDEX IF NOT EXISTS booking_activity_history_booking_idx
+  ON booking_activity_history (booking_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS booking_payment_documents_booking_idx ON booking_payment_documents (booking_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS booking_availability_blocks_date_idx ON booking_availability_blocks (blocked_date);
 CREATE INDEX IF NOT EXISTS submission_attachments_enquiry_idx ON submission_attachments (enquiry_id);

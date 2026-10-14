@@ -14,3 +14,7 @@ dist/
 *.mov
 *.MP4
 *.mp4
+
+# Homepage gallery videos
+!images/tint 2.mp4
+!images/import.mp4

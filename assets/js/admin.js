@@ -1,6 +1,10 @@
 const configuredApiBaseUrl = document.querySelector('meta[name="api-base-url"]')?.content.trim() || '';
 const isLocalWebsite = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const apiBaseUrl = (configuredApiBaseUrl || (isLocalWebsite ? `${window.location.protocol}//${window.location.hostname}:3000` : ''))
+const isGitHubPages = window.location.hostname === 'nutcracker1js.github.io';
+const hostedApiBaseUrl = isGitHubPages ? 'https://teo-dacarguy-car-services.onrender.com' : '';
+const apiBaseUrl = (configuredApiBaseUrl
+  || (isLocalWebsite ? `${window.location.protocol}//${window.location.hostname}:3000` : '')
+  || hostedApiBaseUrl)
   .replace(/\/$/, '');
 const loginForm = document.querySelector('#admin-login');
 const inbox = document.querySelector('#admin-inbox');
@@ -24,6 +28,26 @@ let activePanel = 'dashboard-panel';
 function showMessage(text) {
   message.textContent = text;
   message.hidden = !text;
+}
+
+async function downloadBookingSlip(booking) {
+  try {
+    const response = await apiRequest(`/api/v1/admin/bookings/${booking.id}/slip`);
+    if (!response.ok) {
+      const result = await response.json();
+      throw new Error(result.error || 'Could not download this booking slip.');
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `booking-${reference(booking)}.pdf`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    showMessage(error.message);
+  }
 }
 
 function encodeCredentials(username, password) {
@@ -227,7 +251,10 @@ async function loadBookings() {
   list.replaceChildren();
   const query = new URLSearchParams({
     status: document.querySelector('#booking-status-filter').value,
+    service: document.querySelector('#booking-service-filter').value,
     paymentStatus: document.querySelector('#booking-payment-filter').value,
+    from: document.querySelector('#booking-from-filter').value,
+    to: document.querySelector('#booking-to-filter').value,
     search: document.querySelector('#booking-search').value.trim(),
     limit: String(PAGE_SIZE),
     offset: String(currentOffset),
@@ -550,8 +577,12 @@ function renderBookingDetails(result) {
   paymentExtras.append(paymentDocumentForm);
   const paymentForm = document.createElement('form');
   paymentForm.className = 'booking-edit-form';
+  const paymentStatusValues = [[booking.payment_status, statusLabel(booking.payment_status)]];
+  if (['PAID', 'REFUND_PENDING'].includes(booking.payment_status)) {
+    paymentStatusValues.push(['REFUND_PENDING', 'Refund pending'], ['REFUNDED', 'Refunded']);
+  }
   const paymentStatus = inputField(paymentForm, 'Payment status', 'select', 'paymentStatus', booking.payment_status, {
-    values: [['UNPAID', 'Unpaid'], ['AWAITING_PAYMENT', 'Awaiting payment'], ['PARTIAL', 'Partially paid'], ['PAID', 'Paid'], ['REFUND_PENDING', 'Refund pending'], ['REFUNDED', 'Refunded']],
+    values: [...new Map(paymentStatusValues.map((item) => [item[0], item])).values()],
   });
   const expectedAmountField = inputField(
     paymentForm,
@@ -562,11 +593,13 @@ function renderBookingDetails(result) {
     'amountExpected',
     booking.fixed_price ?? booking.amount_expected ?? '',
   );
-  if (booking.fixed_price !== null && booking.fixed_price !== undefined) {
+  if ((booking.fixed_price !== null && booking.fixed_price !== undefined)
+    || ['AWAITING_PAYMENT', 'PAID', 'REFUND_PENDING', 'REFUNDED'].includes(booking.payment_status)) {
     expectedAmountField.readOnly = true;
-    expectedAmountField.title = 'Automatically set from the selected service option price.';
+    expectedAmountField.title = 'Approved service price cannot be changed while payment is active or verified.';
   }
-  inputField(paymentForm, 'Amount received (₦)', 'number', 'amountReceived', booking.amount_received ?? 0);
+  const amountReceivedField = inputField(paymentForm, 'Amount received (₦)', 'number', 'amountReceived', booking.amount_received ?? 0);
+  amountReceivedField.readOnly = true;
   const paymentAdvanced = document.createElement('details');
   paymentAdvanced.className = 'booking-detail-disclosure';
   addText(paymentAdvanced, 'summary', 'More payment fields');
@@ -574,10 +607,12 @@ function renderBookingDetails(result) {
   // Keep references and verification visible only when staff expand payment details.
   const advancedFields = document.createElement('div');
   advancedFields.className = 'booking-edit-form';
-  inputField(advancedFields, 'Transaction reference', 'text', 'reference', booking.payment_reference || '');
-  inputField(advancedFields, 'Verification', 'select', 'verification', booking.payment_verification || 'UNVERIFIED', {
+  const paymentReferenceField = inputField(advancedFields, 'Transaction reference', 'text', 'reference', booking.payment_reference || '');
+  paymentReferenceField.readOnly = true;
+  const verificationField = inputField(advancedFields, 'Verification', 'select', 'verification', booking.payment_verification || 'UNVERIFIED', {
     values: [['UNVERIFIED', 'Unverified'], ['VERIFIED', 'Verified'], ['FAILED', 'Failed']],
   });
+  verificationField.disabled = true;
   inputField(advancedFields, 'Refund status', 'select', 'refundStatus', booking.refund_status || 'NONE', {
     values: [['NONE', 'None'], ['INITIATED', 'Initiated'], ['COMPLETED', 'Completed']],
   });
@@ -592,14 +627,13 @@ function renderBookingDetails(result) {
     savePayment.disabled = true;
     try {
       const data = new FormData(paymentForm);
-      const advancedData = new FormData(advancedFields);
       await sendJson(`/api/v1/admin/bookings/${booking.id}/payment`, 'PATCH', {
         paymentStatus: paymentStatus.value,
         email: data.get('email'),
         amountExpected: data.get('amountExpected') === '' ? null : Number(data.get('amountExpected')),
-        amountReceived: Number(data.get('amountReceived')),
-        reference: advancedData.get('reference'),
-        verification: advancedData.get('verification'),
+        amountReceived: Number(booking.amount_received || 0),
+        reference: booking.payment_reference,
+        verification: booking.payment_verification,
         refundStatus: advancedData.get('refundStatus'),
       }, 'Could not update payment details.');
       await openBooking(booking.id);
@@ -621,6 +655,8 @@ function renderBookingDetails(result) {
   const statusChoices = [
     ['NEW', 'New request'],
     ['APPROVED', 'Approved'],
+    ['RESCHEDULE_PROPOSED', 'Propose another appointment time'],
+    ['CONFIRMED', 'Confirm appointment'],
     ['DECLINED', 'Declined'],
     ['COMPLETED', 'Completed'],
     ['CANCELLED', 'Cancelled'],
@@ -635,6 +671,23 @@ function renderBookingDetails(result) {
     values: [['', 'Choose an action'], ['RESCHEDULE', 'Offer rescheduling'], ['INITIATE_REFUND', 'Record refund as initiated']],
   });
   const resolutionField = resolution.closest('.booking-edit-field');
+  const proposedDate = inputField(statusForm, 'Proposed date', 'date', 'proposedDate', booking.proposed_preferred_date || '');
+  const proposedTime = inputField(statusForm, 'Proposed time', 'time', 'proposedTime', booking.proposed_preferred_time || '');
+  const proposedDateField = proposedDate.closest('.booking-edit-field');
+  const proposedTimeField = proposedTime.closest('.booking-edit-field');
+  const declineReason = inputField(statusForm, 'Customer-facing decline explanation (optional)', 'text', 'declineReason', booking.decline_reason || '');
+  declineReason.maxLength = 1000;
+  const appointmentInstructions = inputField(statusForm, 'Appointment instructions (optional)', 'text', 'appointmentInstructions', booking.appointment_instructions || '');
+  appointmentInstructions.maxLength = 2000;
+  const updateStatusFields = () => {
+    const isProposing = nextStatus.value === 'RESCHEDULE_PROPOSED';
+    proposedDateField.hidden = !isProposing;
+    proposedTimeField.hidden = !isProposing;
+    proposedDate.required = isProposing;
+    proposedTime.required = isProposing;
+    declineReason.closest('.booking-edit-field').hidden = nextStatus.value !== 'DECLINED';
+    appointmentInstructions.closest('.booking-edit-field').hidden = nextStatus.value !== 'CONFIRMED';
+  };
   const updateResolutionVisibility = () => {
     const required = booking.payment_status === 'PAID'
       && ['DECLINED', 'CANCELLED'].includes(nextStatus.value);
@@ -642,7 +695,9 @@ function renderBookingDetails(result) {
     resolution.required = required;
     if (!required) resolution.value = '';
   };
+  nextStatus.addEventListener('change', updateStatusFields);
   nextStatus.addEventListener('change', updateResolutionVisibility);
+  updateStatusFields();
   updateResolutionVisibility();
   const updateStatus = document.createElement('button');
   updateStatus.className = 'button button-bright';
@@ -655,11 +710,18 @@ function renderBookingDetails(result) {
       const updated = await sendJson(`/api/v1/admin/bookings/${booking.id}/status`, 'PATCH', {
         status: nextStatus.value,
         resolution: resolution.value || undefined,
+        declineReason: declineReason.value,
+        appointmentInstructions: appointmentInstructions.value,
+        ...(nextStatus.value === 'RESCHEDULE_PROPOSED'
+          ? { proposedDate: proposedDate.value, proposedTime: proposedTime.value }
+          : {}),
       }, 'Could not update booking status.');
       if (updated.status === 'APPROVED') {
         showMessage(updated.paymentCheckout?.status === 'ready'
-          ? 'Booking approved and payment link prepared. Open WhatsApp with message from booking details when you are ready to contact the customer.'
-          : `Booking approved. Payment link not ready: ${updated.paymentCheckout?.error || 'check payment settings'}.`);
+          ? `Booking approved and payment link prepared. Customer email: ${statusLabel(updated.customerEmail?.status || 'not configured')}.`
+          : `Booking approved. Payment link not ready: ${updated.paymentCheckout?.error || 'check payment settings'}. Customer email: ${statusLabel(updated.customerEmail?.status || 'not configured')}.`);
+      } else if (updated.customerEmail) {
+        showMessage(`Booking updated. Customer email: ${statusLabel(updated.customerEmail.status)}.`);
       }
       await openBooking(booking.id);
       await refreshCurrentPanel();
@@ -670,6 +732,22 @@ function renderBookingDetails(result) {
     }
   });
   actions.append(statusForm);
+  if (booking.status === 'APPROVED' && booking.payment_status !== 'PAID') {
+    actions.append(button('Prepare payment link and email customer', 'admin-view-button', async () => {
+      try {
+        const result = await sendJson(`/api/v1/admin/bookings/${booking.id}/payment-link`, 'POST', {});
+        showMessage(`Payment link is ready. Customer email: ${statusLabel(result.customerEmail?.status || 'not configured')}.`);
+        await openBooking(booking.id);
+      } catch (error) {
+        showMessage(error.message);
+      }
+    }));
+  }
+  if (booking.status === 'CONFIRMED'
+    && (Number(booking.amount_expected || 0) <= 0
+      || (booking.payment_status === 'PAID' && booking.payment_verification === 'VERIFIED'))) {
+    actions.append(button('Download booking slip PDF', 'admin-view-button', () => downloadBookingSlip(booking)));
+  }
   root.append(actions, paymentSection);
   root.append(button('Delete this booking', 'admin-delete-button booking-detail-delete', () => deleteBooking(booking)));
 
@@ -728,6 +806,41 @@ function renderBookingDetails(result) {
   if (!result.history.length) addText(historyList, 'li', 'No status history recorded.');
   historySection.append(historyList);
   root.append(historySection);
+
+  const activitySection = document.createElement('details');
+  activitySection.className = 'booking-detail-disclosure';
+  addText(activitySection, 'summary', 'Activity and customer email delivery');
+  const activityList = document.createElement('div');
+  activityList.className = 'admin-list';
+  (result.activity || []).forEach((entry) => {
+    const item = document.createElement('article');
+    item.className = 'admin-note';
+    addText(item, 'strong', statusLabel(entry.action));
+    addText(item, 'small', new Date(entry.created_at).toLocaleString());
+    activityList.append(item);
+  });
+  (result.notifications || []).forEach((notification) => {
+    const item = document.createElement('article');
+    item.className = 'admin-note';
+    addText(item, 'strong', `${statusLabel(notification.event_type)} · ${statusLabel(notification.delivery_status)}`);
+    addText(item, 'small', `${notification.attempts} attempt(s)${notification.last_error ? ` · ${notification.last_error}` : ''}`);
+    if (notification.delivery_status === 'FAILED') {
+      item.append(button('Retry email', 'admin-view-button', async () => {
+        try {
+          await sendJson(`/api/v1/admin/notifications/${notification.id}/retry`, 'POST', {});
+          await openBooking(booking.id);
+        } catch (error) {
+          showMessage(error.message);
+        }
+      }));
+    }
+    activityList.append(item);
+  });
+  if (!(result.activity || []).length && !(result.notifications || []).length) {
+    addText(activityList, 'p', 'No activity or email records yet.', 'admin-empty');
+  }
+  activitySection.append(activityList);
+  root.append(activitySection);
 }
 
 async function refreshCurrentPanel() {
