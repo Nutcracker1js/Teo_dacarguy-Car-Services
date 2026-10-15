@@ -63,7 +63,7 @@ const pool = {
     if (sql.includes('SELECT service, service_option, payment_status')) {
       return { rowCount: 1, rows: [currentService] };
     }
-    if (sql.replace(/\s+/g, ' ').includes('SELECT id, reference, full_name, phone, whatsapp, email, whatsapp_opt_in, service, service_other')) {
+    if (sql.replace(/\s+/g, ' ').includes('SELECT id, reference, full_name, phone, whatsapp, email, service, service_other')) {
       return {
         rowCount: 1,
         rows: [{
@@ -73,7 +73,6 @@ const pool = {
           phone: '+234 801 234 5678',
           whatsapp: null,
           email: 'ada@example.test',
-          whatsapp_opt_in: true,
           service: 'TINT',
           service_option: 'classic-smoke',
           service_other: null,
@@ -252,11 +251,18 @@ test('admin can delete one booking and cascades its related records', async () =
   assert.equal(invalid.status, 404);
 });
 
-test('paid bookings cannot be declined without a reschedule or refund resolution', async () => {
-  const denied = await request(`/bookings/${bookingId}/status`, {
+test('declines require a reason and paid bookings require a refund resolution', async () => {
+  const missingReason = await request(`/bookings/${bookingId}/status`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status: 'DECLINED' }),
+  });
+  assert.equal(missingReason.status, 400);
+
+  const denied = await request(`/bookings/${bookingId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'DECLINED', declineReason: 'This date is unavailable.' }),
   });
   assert.equal(denied.status, 409);
   assert.equal((await denied.json()).requiresResolution, true);
@@ -264,7 +270,11 @@ test('paid bookings cannot be declined without a reschedule or refund resolution
   const resolved = await request(`/bookings/${bookingId}/status`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'DECLINED', resolution: 'INITIATE_REFUND' }),
+    body: JSON.stringify({
+      status: 'DECLINED',
+      declineReason: 'This date is unavailable.',
+      resolution: 'INITIATE_REFUND',
+    }),
   });
   assert.equal(resolved.status, 200);
   const result = await resolved.json();

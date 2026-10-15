@@ -68,7 +68,7 @@ async function ensureApprovalCheckout(pool, booking, publicSiteUrl) {
   if (!awaitingPayment) {
     const saved = await pool.query(
       `UPDATE bookings SET amount_expected = $1
-       WHERE id = $2 AND status = 'APPROVED' AND payment_status <> 'PAID'
+     WHERE id = $2 AND status IN ('APPROVED', 'CONFIRMED') AND payment_status <> 'PAID'
        RETURNING id`,
       [amountExpected, booking.id],
     );
@@ -131,6 +131,7 @@ function createAdminRouter({
   bookingNotifications = null,
   paymentExpiryHours = 24,
   publicSiteUrl = '',
+  notificationEmail = process.env.NOTIFICATION_EMAIL || '',
 }) {
   const router = express.Router();
   const authenticate = createAdminAuth(username, password);
@@ -235,14 +236,31 @@ function createAdminRouter({
       response.status(400).json({ error: 'Choose a valid calendar date range.' });
       return;
     }
-    const result = await pool.query(
-      `SELECT id, full_name, phone, vehicle_make, vehicle_model, service, service_other,
-        preferred_date, preferred_time, status, payment_status
-       FROM bookings WHERE preferred_date BETWEEN $1 AND $2
-       ORDER BY preferred_date, preferred_time NULLS LAST`,
-      [from, to],
-    );
-    response.json({ bookings: result.rows });
+    const [result, blocks] = await Promise.all([
+      pool.query(
+        `SELECT id, full_name, phone, vehicle_make, vehicle_model, service, service_other,
+          preferred_date AS calendar_date, preferred_time AS calendar_time, status, payment_status,
+          FALSE AS is_proposed, NULL::varchar AS proposed_response
+         FROM bookings WHERE preferred_date BETWEEN $1 AND $2
+           AND status = ANY($3::varchar[])
+         UNION ALL
+         SELECT id, full_name, phone, vehicle_make, vehicle_model, service, service_other,
+          proposed_preferred_date AS calendar_date, proposed_preferred_time AS calendar_time,
+          status, payment_status, TRUE AS is_proposed, proposed_response
+         FROM bookings
+         WHERE status = 'RESCHEDULE_PROPOSED'
+           AND proposed_preferred_date BETWEEN $1 AND $2
+         ORDER BY calendar_date, calendar_time NULLS LAST`,
+        [from, to, ['NEW', 'PENDING_REVIEW', 'AWAITING_PAYMENT', 'AWAITING_APPROVAL', 'APPROVED', 'CONFIRMED', 'RESCHEDULE_PROPOSED']],
+      ),
+      pool.query(
+        `SELECT id, blocked_date::text AS calendar_date, starts_at AS calendar_time, ends_at, reason
+         FROM booking_availability_blocks WHERE blocked_date BETWEEN $1 AND $2
+         ORDER BY blocked_date, starts_at NULLS FIRST`,
+        [from, to],
+      ),
+    ]);
+    response.json({ bookings: result.rows, blocks: blocks.rows });
   }));
 
   router.get('/bookings/:id', authenticate, asyncHandler(async (request, response) => {
@@ -337,7 +355,7 @@ function createAdminRouter({
     }
     const notification = await pool.query(
       `UPDATE booking_notifications n
-       SET recipient = COALESCE(NULLIF(b.email, ''), n.recipient)
+       SET recipient = COALESCE(NULLIF(n.recipient, ''), NULLIF(b.email, ''))
        FROM bookings b
        WHERE n.id = $1 AND b.id = n.booking_id AND n.delivery_status = 'FAILED'
        RETURNING n.id`,
@@ -426,6 +444,10 @@ function createAdminRouter({
       response.status(400).json({ error: 'Choose a supported booking status.' });
       return;
     }
+    if (status === 'DECLINED' && !declineReason) {
+      response.status(400).json({ error: 'Provide a reason for declining this booking.' });
+      return;
+    }
     if (resolution !== undefined && !RESOLUTIONS.has(resolution)) {
       response.status(400).json({ error: 'Choose rescheduling or refund as the resolution.' });
       return;
@@ -456,9 +478,9 @@ function createAdminRouter({
         ? crypto.createHash('sha256').update(issueSlipToken).digest('hex')
         : null,
     });
-    if (result.httpStatus === 200 && status === 'APPROVED') {
+    if (result.httpStatus === 200 && result.body.status === 'APPROVED') {
       const bookingResult = await pool.query(
-        `SELECT id, reference, full_name, phone, whatsapp, email, whatsapp_opt_in, service, service_other,
+        `SELECT id, reference, full_name, phone, whatsapp, email, service, service_other,
           service_option, preferred_date::text AS preferred_date, to_char(preferred_time, 'HH24:MI') AS preferred_time,
           amount_expected, payment_status, payment_reference, payment_checkout_url, payment_expires_at
          FROM bookings WHERE id = $1`,
@@ -469,13 +491,16 @@ function createAdminRouter({
         return;
       }
       if (bookingResult.rows[0].payment_status === 'PAID') {
+        delete result.body.proposalId;
         response.status(result.httpStatus).json(result.body);
         return;
       }
       result.body.paymentCheckout = await ensureApprovalCheckout(pool, bookingResult.rows[0], publicSiteUrl);
-      const eventType = result.body.paymentCheckout.status === 'ready'
-        ? 'BOOKING_ACCEPTED'
-        : 'BOOKING_QUOTE_REQUIRED';
+      const eventType = result.body.rescheduleConfirmed
+        ? 'RESCHEDULE_CONFIRMED'
+        : result.body.paymentCheckout.status === 'ready'
+          ? 'BOOKING_ACCEPTED'
+          : 'BOOKING_QUOTE_REQUIRED';
       result.body.customerEmail = await notifyBookingEvent(
         pool,
         bookingNotifications,
@@ -484,19 +509,25 @@ function createAdminRouter({
         {
           checkoutUrl: result.body.paymentCheckout.authorizationUrl || null,
           paymentPageUrl: result.body.paymentCheckout.paymentPageUrl || null,
-          eventKey: `booking_accepted:${request.params.id}:${result.body.paymentCheckout.paymentPageUrl || result.body.paymentCheckout.authorizationUrl || 'quote-required'}`,
+          eventKey: result.body.rescheduleConfirmed
+            ? `reschedule_confirmed:${request.params.id}:${result.body.proposalId}`
+            : `booking_accepted:${request.params.id}:${result.body.paymentCheckout.paymentPageUrl || result.body.paymentCheckout.authorizationUrl || 'quote-required'}`,
           paymentDeadline: result.body.paymentCheckout.authorizationUrl && bookingResult.rows[0].payment_expires_at
             ? paymentDeadline(bookingResult.rows[0].payment_expires_at, paymentExpiryHours)
             : null,
+          proposedDate: result.body.confirmedProposedDate || null,
+          proposedTime: result.body.confirmedProposedTime || null,
         },
       );
     } else if (result.httpStatus === 200
+      && result.body.status === status
       && (result.body.previousStatus !== status || result.body.proposalUpdated)) {
       const notificationType = {
         DECLINED: 'BOOKING_DECLINED',
         RESCHEDULE_PROPOSED: 'RESCHEDULE_PROPOSED',
         CONFIRMED: 'APPOINTMENT_CONFIRMED',
         CANCELLED: 'BOOKING_CANCELLED',
+        COMPLETED: 'JOB_COMPLETED',
       }[status];
       if (notificationType) {
         const slipUrl = status === 'CONFIRMED' && issueSlipToken
@@ -504,6 +535,9 @@ function createAdminRouter({
           : null;
         const responseUrl = status === 'RESCHEDULE_PROPOSED' && proposalToken
           ? createProposalResponseUrl(publicSiteUrl, result.body.reference, proposalToken)
+          : null;
+        const confirmedPayment = status === 'CONFIRMED' && result.body.rescheduleConfirmed
+          ? await getConfirmedPaymentLink(pool, request.params.id, publicSiteUrl)
           : null;
         result.body.customerEmail = await notifyBookingEvent(
           pool,
@@ -517,6 +551,7 @@ function createAdminRouter({
             responseUrl,
             proposedDate,
             proposedTime,
+            ...(confirmedPayment || {}),
           },
         );
       }
@@ -530,7 +565,7 @@ function createAdminRouter({
       return;
     }
     const bookingResult = await pool.query(
-      `SELECT id, reference, full_name, phone, whatsapp, email, whatsapp_opt_in, service, service_other,
+      `SELECT id, reference, full_name, phone, whatsapp, email, service, service_other,
         service_option, status, preferred_date::text AS preferred_date,
         to_char(preferred_time, 'HH24:MI') AS preferred_time,
         amount_expected, payment_status, payment_reference, payment_checkout_url, payment_expires_at
@@ -797,10 +832,10 @@ function createAdminRouter({
       response.status(400).json({ error: 'Provide valid working hours for all seven weekdays.' });
       return;
     }
-    if (!Array.isArray(durations) || durations.length < 1 || durations.length > 16
+    if (durations !== undefined && (!Array.isArray(durations) || durations.length > 16
       || durations.some((item) => typeof item.service !== 'string'
         || !/^[A-Z_]{2,32}$/.test(item.service)
-        || !Number.isInteger(item.durationMinutes) || item.durationMinutes < 15 || item.durationMinutes > 720)) {
+        || !Number.isInteger(item.durationMinutes) || item.durationMinutes < 15 || item.durationMinutes > 720))) {
       response.status(400).json({ error: 'Provide service durations between 15 minutes and 12 hours.' });
       return;
     }
@@ -816,7 +851,7 @@ function createAdminRouter({
           [item.weekday, item.isOpen, item.isOpen ? item.opensAt : null, item.isOpen ? item.closesAt : null],
         );
       }
-      for (const item of durations) {
+      for (const item of durations || []) {
         await client.query(
           `INSERT INTO booking_service_durations (service, duration_minutes)
            VALUES ($1, $2)
@@ -1083,6 +1118,9 @@ function constantTimeEqual(value, expected) {
 }
 
 async function updateBookingStatus(pool, bookingId, status, resolution, options = {}) {
+  if (status === 'DECLINED' && !String(options.declineReason || '').trim()) {
+    return { httpStatus: 400, body: { error: 'Provide a reason for declining this booking.' } };
+  }
   const client = await pool.connect();
   let transactionStarted = false;
   try {
@@ -1090,7 +1128,9 @@ async function updateBookingStatus(pool, bookingId, status, resolution, options 
     transactionStarted = true;
     const current = await client.query(
       `SELECT id, reference, status, payment_status, payment_verification, amount_received,
-        amount_expected, service
+        amount_expected, service, proposed_preferred_date::text AS proposed_date,
+        to_char(proposed_preferred_time, 'HH24:MI') AS proposed_time,
+        proposed_response, proposed_response_token_hash
        FROM bookings WHERE id = $1 FOR UPDATE`,
       [bookingId],
     );
@@ -1100,6 +1140,25 @@ async function updateBookingStatus(pool, bookingId, status, resolution, options 
       return { httpStatus: 404, body: { error: 'Booking not found.' } };
     }
     const booking = current.rows[0];
+    if (booking.status === 'RESCHEDULE_PROPOSED'
+      && status === 'RESCHEDULE_PROPOSED'
+      && booking.proposed_response_token_hash
+      && booking.proposed_response_expires_at
+      && booking.proposed_date === options.proposedDate
+      && booking.proposed_time === options.proposedTime) {
+      await client.query('COMMIT');
+      transactionStarted = false;
+      return {
+        httpStatus: 200,
+        body: {
+          id: booking.id,
+          reference: booking.reference,
+          status,
+          previousStatus: status,
+          proposalUpdated: false,
+        },
+      };
+    }
     if (booking.status === status && status !== 'RESCHEDULE_PROPOSED') {
       await client.query('COMMIT');
       transactionStarted = false;
@@ -1109,7 +1168,10 @@ async function updateBookingStatus(pool, bookingId, status, resolution, options 
       };
     }
     const paid = booking.payment_status === 'PAID' || Number(booking.amount_received) > 0;
-    if (status === 'CONFIRMED' && Number(booking.amount_expected || 0) > 0
+    const confirmingAcceptedProposal = status === 'CONFIRMED'
+      && booking.status === 'RESCHEDULE_PROPOSED'
+      && booking.proposed_response === 'ACCEPTED';
+    if (status === 'CONFIRMED' && !confirmingAcceptedProposal && Number(booking.amount_expected || 0) > 0
       && !(booking.payment_status === 'PAID' && booking.payment_verification === 'VERIFIED')) {
       await client.query('ROLLBACK');
       transactionStarted = false;
@@ -1137,11 +1199,24 @@ async function updateBookingStatus(pool, bookingId, status, resolution, options 
         service: booking.service,
       }, { excludeBookingId: bookingId });
     }
+    if (confirmingAcceptedProposal) {
+      await reserveBookingSlot(client, {
+        preferredDate: booking.proposed_date,
+        preferredTime: booking.proposed_time,
+        service: booking.service,
+      }, { excludeBookingId: bookingId });
+    }
+    const effectiveStatus = confirmingAcceptedProposal
+      && !(booking.payment_status === 'PAID' && booking.payment_verification === 'VERIFIED')
+      ? 'APPROVED'
+      : status;
     const updated = await client.query(
       `UPDATE bookings SET status = $1::varchar, resolution = $2,
         payment_status = CASE WHEN $3::varchar = 'INITIATE_REFUND' THEN 'REFUND_PENDING' ELSE payment_status END,
         refund_status = CASE WHEN $3::varchar = 'INITIATE_REFUND' THEN 'INITIATED' ELSE refund_status END,
         decline_reason = CASE WHEN $1::varchar = 'DECLINED' THEN NULLIF($4, '') ELSE NULL END,
+        preferred_date = CASE WHEN $12 THEN proposed_preferred_date ELSE preferred_date END,
+        preferred_time = CASE WHEN $12 THEN proposed_preferred_time ELSE preferred_time END,
         appointment_instructions = CASE
           WHEN $1::varchar = 'CONFIRMED' AND $5 <> '' THEN $5 ELSE appointment_instructions END,
         slip_token_hash = CASE WHEN $6::char(64) IS NULL THEN slip_token_hash ELSE $6::char(64) END,
@@ -1155,11 +1230,12 @@ async function updateBookingStatus(pool, bookingId, status, resolution, options 
           THEN COALESCE(proposed_previous_status, $9) ELSE NULL END,
         proposed_response_token_hash = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED' THEN $10::char(64) ELSE NULL END,
         proposed_response_expires_at = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED'
-          THEN NOW() + INTERVAL '48 hours' ELSE NULL END
+          THEN NOW() + INTERVAL '48 hours' ELSE NULL END,
+        proposed_response = NULL
        WHERE id = $11
        RETURNING id, reference, status, resolution, payment_status, refund_status`,
       [
-        status,
+        effectiveStatus,
         needsResolution ? resolution : null,
         needsResolution ? resolution : null,
         options.declineReason || '',
@@ -1170,19 +1246,20 @@ async function updateBookingStatus(pool, bookingId, status, resolution, options 
         booking.status,
         options.proposalTokenHash || null,
         bookingId,
+        confirmingAcceptedProposal,
       ],
     );
     await client.query(
       `INSERT INTO booking_status_history (id, booking_id, previous_status, status, resolution)
        VALUES ($1, $2, $3, $4, $5)`,
-      [crypto.randomUUID(), bookingId, booking.status, status, needsResolution ? resolution : null],
+      [crypto.randomUUID(), bookingId, booking.status, effectiveStatus, needsResolution ? resolution : null],
     );
     await client.query(
       `INSERT INTO booking_activity_history (id, booking_id, action, details)
        VALUES ($1, $2, 'BOOKING_STATUS_CHANGED', $3::jsonb)`,
       [crypto.randomUUID(), bookingId, JSON.stringify({
         previousStatus: booking.status,
-        status,
+        status: effectiveStatus,
         resolution: needsResolution ? resolution : null,
         proposedDate: options.proposedDate || null,
         proposedTime: options.proposedTime || null,
@@ -1195,6 +1272,12 @@ async function updateBookingStatus(pool, bookingId, status, resolution, options 
       body: {
         ...updated.rows[0],
         previousStatus: booking.status,
+        rescheduleConfirmed: confirmingAcceptedProposal,
+        ...(confirmingAcceptedProposal ? {
+          confirmedProposedDate: booking.proposed_date,
+          confirmedProposedTime: booking.proposed_time,
+          proposalId: booking.proposed_response_token_hash,
+        } : {}),
         ...(status === 'RESCHEDULE_PROPOSED' ? { proposalUpdated: true } : {}),
       },
     };
@@ -1211,7 +1294,9 @@ async function notifyBookingEvent(pool, notifications, bookingId, eventType, ext
   const result = await pool.query(
     `SELECT id, reference, full_name, email, service, service_other,
       preferred_date::text AS preferred_date, to_char(preferred_time, 'HH24:MI') AS preferred_time,
-      amount_expected, amount_received, payment_reference, payment_status
+      amount_expected, amount_received, payment_reference, payment_status,
+      refund_status, resolution, vehicle_make, vehicle_model, vehicle_year, registration,
+      location, location_other
      FROM bookings WHERE id = $1`,
     [bookingId],
   );
@@ -1235,6 +1320,11 @@ async function notifyBookingEvent(pool, notifications, bookingId, eventType, ext
         amountReceived: Number(booking.amount_received || 0),
         transactionReference: booking.payment_reference,
         paymentStatus: booking.payment_status,
+        refundStatus: booking.refund_status,
+        resolution: booking.resolution,
+        vehicle: [booking.vehicle_year, booking.vehicle_make, booking.vehicle_model].filter(Boolean).join(' '),
+        registration: booking.registration,
+        location: booking.location_other || booking.location,
         ...eventPayload,
       },
     });
@@ -1305,6 +1395,23 @@ function createCombinedSubmissionQuery(type) {
   return [enquiries, bookings].filter(Boolean).join('\nUNION ALL\n');
 }
 
+async function getConfirmedPaymentLink(pool, bookingId, publicSiteUrl) {
+  const result = await pool.query(
+    `SELECT id, reference, email, service, service_option, payment_status,
+      amount_expected, payment_reference, payment_checkout_url
+     FROM bookings WHERE id = $1`,
+    [bookingId],
+  );
+  if (!result.rowCount || result.rows[0].payment_status === 'PAID') return null;
+  const checkout = await ensureApprovalCheckout(pool, result.rows[0], publicSiteUrl);
+  return checkout.status === 'ready'
+    ? {
+      checkoutUrl: checkout.authorizationUrl || null,
+      paymentPageUrl: checkout.paymentPageUrl || null,
+    }
+    : null;
+}
+
 function isTimeValue(value) {
   return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
@@ -1326,4 +1433,4 @@ function asyncHandler(handler) {
   };
 }
 
-module.exports = { createAdminRouter };
+module.exports = { createAdminRouter, updateBookingStatus };

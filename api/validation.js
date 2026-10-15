@@ -157,7 +157,6 @@ const BOOKING_FIELDS = {
   phone: { max: 32, min: 7, pattern: PHONE_PATTERN },
   whatsapp: { max: 32, min: 7, pattern: PHONE_PATTERN },
   email: { max: 254, pattern: EMAIL_PATTERN },
-  whatsappOptIn: { type: 'boolean' },
   make: { max: 80 },
   model: { max: 80 },
   year: { type: 'year', min: 1950, max: CURRENT_YEAR + 1 },

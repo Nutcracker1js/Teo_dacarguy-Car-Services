@@ -200,7 +200,7 @@ const pool = {
         return {
           rows: [{
             id: values[0],
-            ...(sql.includes('INSERT INTO bookings') ? { reference: values[1] } : {}),
+            ...(sql.includes('INSERT INTO bookings') ? { reference: 'TEO-1000' } : {}),
             status: 'NEW',
             created_at: '2026-10-07T14:00:00.000Z',
           }],
@@ -888,20 +888,18 @@ test('valid booking is saved with its requested service and date', async () => {
       preferredTime: '10:30',
       location: 'OUR_LOCATION',
       policyAccepted: true,
-      whatsappOptIn: true,
     }),
   });
   const result = await response.json();
   assert.equal(response.status, 201);
   assert.equal(result.status, 'NEW');
-  assert.match(result.reference, /^TD-[A-F0-9]{20}$/);
+  assert.match(result.reference, /^TEO-\d+$/);
   const savedBooking = saved.filter((item) => item.sql.includes('INSERT INTO bookings')).at(-1);
-  assert.equal(savedBooking.values[1], result.reference);
-  assert.equal(savedBooking.values[11], '2027-01-20');
-  assert.equal(savedBooking.values[7], latestAllowedVehicleYear);
-  assert.equal(savedBooking.values[18], 'ada@example.test');
-  assert.equal(savedBooking.values[19], true);
-  assert.equal(savedBooking.values[4], '+234 809 876 5432');
+  assert.match(savedBooking.sql, /INSERT INTO bookings\s*\(\s*id,\s*full_name/);
+  assert.equal(savedBooking.values[10], '2027-01-20');
+  assert.equal(savedBooking.values[6], latestAllowedVehicleYear);
+  assert.equal(savedBooking.values[17], 'ada@example.test');
+  assert.equal(savedBooking.values[3], '+234 809 876 5432');
 });
 
 test('tint booking saves its selected option and server-priced amount', async () => {
@@ -925,14 +923,13 @@ test('tint booking saves its selected option and server-priced amount', async ()
   });
   const result = await response.json();
   assert.equal(response.status, 201);
-  assert.match(result.reference, /^TD-[A-F0-9]{20}$/);
+  assert.match(result.reference, /^TEO-\d+$/);
   const savedBooking = saved.filter((item) => item.sql.includes('INSERT INTO bookings')).at(-1);
-  assert.equal(savedBooking.values[1], result.reference);
-  assert.equal(savedBooking.values[20], 'ceramic');
-  assert.equal(savedBooking.values[21], 150000);
-  assert.match(savedBooking.values[15], /Ceramic colour options/);
-  assert.match(savedBooking.values[15], /₦150,000/);
-  assert.match(savedBooking.values[15], /payment is due only after booking approval/i);
+  assert.equal(savedBooking.values[18], 'ceramic');
+  assert.equal(savedBooking.values[19], 150000);
+  assert.match(savedBooking.values[14], /Ceramic colour options/);
+  assert.match(savedBooking.values[14], /₦150,000/);
+  assert.match(savedBooking.values[14], /payment is due only after booking approval/i);
 });
 
 test('booking rejects unknown tint options and tint options on other services', async () => {

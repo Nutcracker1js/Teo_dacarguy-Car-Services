@@ -21,7 +21,7 @@ if (statusForm) {
   const requestedReference = query.get('bookingReference') || query.get('reference');
   const responseToken = query.get('responseToken') || '';
   const transactionReference = query.get('trxref')
-    || (query.get('reference') && !query.get('reference').startsWith('TD-') ? query.get('reference') : '');
+    || (query.get('reference') && !/^(?:TD-|TEO-)/i.test(query.get('reference')) ? query.get('reference') : '');
   if (requestedReference) referenceInput.value = requestedReference;
   const savedBooking = requestedReference
     ? window.bookingBrowserStorage?.getBooking(requestedReference)
@@ -80,7 +80,10 @@ if (statusForm) {
     const [label, message, nextStep] = statusMessages[booking.status]
       || ['Booking update', 'Your booking status has been updated.', 'Contact Teo if you need further assistance.'];
     document.querySelector('#booking-status-label').textContent = label;
-    document.querySelector('#booking-status-message').textContent = message;
+    document.querySelector('#booking-status-message').textContent =
+      booking.status === 'RESCHEDULE_PROPOSED' && booking.proposed_response === 'ACCEPTED'
+        ? 'You accepted this proposed appointment time. Teo will confirm it before it becomes final.'
+        : message;
     document.querySelector('#booking-status-reference').textContent = booking.reference;
     document.querySelector('#booking-status-service').textContent =
       booking.service_other || serviceLabels[booking.service] || booking.service;
@@ -99,7 +102,7 @@ if (statusForm) {
     document.querySelector('#booking-status-proposed-appointment').textContent =
       [dateLabel(booking.proposed_preferred_date), proposedTime].filter(Boolean).join(' · ');
     document.querySelector('#reschedule-response-panel').hidden =
-      booking.status !== 'RESCHEDULE_PROPOSED' || !responseToken;
+      booking.status !== 'RESCHEDULE_PROPOSED' || booking.proposed_response === 'ACCEPTED' || !responseToken;
     const amountExpected = Number(booking.amount_expected);
     const isApproved = ['APPROVED', 'CONFIRMED'].includes(booking.status);
     const isPaid = booking.payment_status === 'PAID';

@@ -26,7 +26,7 @@
   }
 
   function validReference(reference) {
-    return typeof reference === 'string' && /^TD-[A-Z0-9-]{4,20}$/i.test(reference.trim());
+    return typeof reference === 'string' && /^(?:TEO-\d{4,20}|TD-[A-Z0-9-]{4,20})$/i.test(reference.trim());
   }
 
   function getBooking(reference) {

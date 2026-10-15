@@ -13,9 +13,11 @@ CREATE TABLE IF NOT EXISTS enquiries (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE SEQUENCE IF NOT EXISTS booking_reference_seq START WITH 999;
+
 CREATE TABLE IF NOT EXISTS bookings (
   id UUID PRIMARY KEY,
-  reference VARCHAR(24) DEFAULT ('TD-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 20))),
+  reference VARCHAR(24) DEFAULT ('TEO-' || nextval('booking_reference_seq')::text),
   full_name VARCHAR(120) NOT NULL,
   phone VARCHAR(32) NOT NULL,
   whatsapp VARCHAR(32),
@@ -63,8 +65,19 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS reference VARCHAR(24);
 UPDATE bookings
 SET reference = 'TD-' || upper(substr(replace(id::text, '-', ''), 1, 12))
 WHERE reference IS NULL;
-ALTER TABLE bookings ALTER COLUMN reference SET DEFAULT ('TD-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 20)));
+ALTER TABLE bookings ALTER COLUMN reference SET DEFAULT ('TEO-' || nextval('booking_reference_seq')::text);
+ALTER TABLE bookings ALTER COLUMN reference SET NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS bookings_reference_idx ON bookings (reference);
+SELECT setval(
+  'booking_reference_seq',
+  GREATEST(
+    999,
+    COALESCE((SELECT MAX(SUBSTRING(reference FROM 5)::BIGINT)
+      FROM bookings WHERE reference ~ '^TEO-[0-9]+$'), 999),
+    (SELECT last_value FROM booking_reference_seq)
+  ),
+  TRUE
+);
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS policy_accepted BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS policy_version VARCHAR(160) NOT NULL DEFAULT 'Booking, Cancellation & Refund Policy v1';
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_status VARCHAR(24) NOT NULL DEFAULT 'UNPAID';
@@ -106,6 +119,7 @@ ALTER TABLE bookings ADD COLUMN IF NOT EXISTS proposed_preferred_time TIME;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS proposed_previous_status VARCHAR(24);
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS proposed_response_token_hash CHAR(64);
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS proposed_response_expires_at TIMESTAMPTZ;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS proposed_response VARCHAR(16);
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS appointment_instructions VARCHAR(2000);
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS decline_reason VARCHAR(1000);
 

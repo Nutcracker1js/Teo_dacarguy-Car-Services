@@ -122,7 +122,7 @@
           </section>
 
           <section id="calendar-panel" class="admin-panel" aria-labelledby="calendar-heading" hidden>
-            <div class="admin-panel-heading"><div><p class="section-kicker">SCHEDULING</p><h2 id="calendar-heading">Availability &amp; calendar</h2><p>Set working hours, service durations and blocked dates. Pending and confirmed requests protect their slots.</p></div></div>
+            <div class="admin-panel-heading"><div><p class="section-kicker">SCHEDULING</p><h2 id="calendar-heading">Availability &amp; calendar</h2><p>Review appointments, customer-proposed times and blocked periods. Existing duration and overlap protections remain active.</p></div></div>
             <div class="admin-calendar-toolbar">
               <label for="calendar-view">View</label><select id="calendar-view"><option value="month">Month</option><option value="week">Week</option><option value="day">Day</option></select>
               <label for="calendar-date">Starting date</label><input id="calendar-date" type="date" />
@@ -134,8 +134,6 @@
               <form id="hours-form" class="admin-subpanel">
                 <div class="admin-section-heading"><div><h3>Working hours</h3><p>Default hours are Monday–Saturday, 8:00 AM–7:00 PM; save this form to customize them.</p></div></div>
                 <div id="working-hours-fields" class="admin-hours-list"></div>
-                <div class="admin-duration-heading"><h4>Service durations</h4><p>Used to protect overlapping appointments.</p></div>
-                <div id="service-duration-fields" class="admin-duration-list"></div>
                 <button class="button button-bright" type="submit">Save availability settings</button>
               </form>
               <section class="admin-subpanel">

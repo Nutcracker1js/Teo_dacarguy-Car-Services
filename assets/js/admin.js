@@ -89,6 +89,15 @@ function statusLabel(value) {
   return String(value || 'NEW').toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function paymentStatusLabel(value) {
+  if (value === 'PAID') return 'Paid';
+  if (value === 'FAILED') return 'Payment failed';
+  if (value === 'REFUND_PENDING') return 'Refund pending';
+  if (value === 'REFUNDED') return 'Refunded';
+  if (value === 'PARTIAL') return 'Partially paid';
+  return 'Unpaid';
+}
+
 function money(value) {
   return value === null || value === undefined ? 'Not set' : `₦${Number(value).toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
@@ -188,7 +197,7 @@ function renderBookingRow(booking) {
   const bookingStatus = document.createElement('td');
   bookingStatus.append(makeBadge(booking.status, 'booking-status'));
   const paymentStatus = document.createElement('td');
-  paymentStatus.append(makeBadge(booking.payment_status, 'payment-status'));
+  paymentStatus.append(makeBadge(paymentStatusLabel(booking.payment_status), 'payment-status'));
   const actions = document.createElement('td');
   actions.append(button('View booking', 'admin-view-button', () => openBooking(booking.id)));
   actions.append(button('Delete', 'admin-delete-button', () => deleteBooking(booking)));
@@ -206,7 +215,7 @@ function buildBookingCard(booking, includePayment = true) {
   const states = document.createElement('div');
   states.className = 'admin-list-badges';
   states.append(makeBadge(booking.status, 'booking-status'));
-  if (includePayment) states.append(makeBadge(booking.payment_status, 'payment-status'));
+  if (includePayment) states.append(makeBadge(paymentStatusLabel(booking.payment_status), 'payment-status'));
   card.append(main, states, button('View details', 'admin-view-button', () => openBooking(booking.id)));
   return card;
 }
@@ -365,7 +374,7 @@ function renderBookingDetails(result, feedback = null) {
   const intro = document.createElement('div');
   intro.className = 'booking-detail-intro';
   addText(intro, 'p', reference(booking));
-  intro.append(makeBadge(booking.status, 'booking-status'), makeBadge(booking.payment_status, 'payment-status'));
+  intro.append(makeBadge(booking.status, 'booking-status'), makeBadge(paymentStatusLabel(booking.payment_status), 'payment-status'));
   root.append(intro);
   if (feedback) {
     const notice = document.createElement('p');
@@ -379,55 +388,22 @@ function renderBookingDetails(result, feedback = null) {
     ['Phone', booking.phone],
     ['Email', booking.email],
     ['WhatsApp', booking.whatsapp],
-    ['WhatsApp updates', booking.whatsapp_opt_in ? 'Opted in' : 'No consent recorded'],
   ]);
   const contactNumber = String(booking.whatsapp || booking.phone || '').replace(/[^\d]/g, '');
   if (contactNumber) {
     const messageForm = document.createElement('div');
     messageForm.className = 'booking-message-form';
-    const defaultMessageType = booking.status === 'APPROVED' && booking.payment_status !== 'PAID'
-      ? 'ACCEPTANCE'
-      : booking.payment_status === 'PAID' && booking.payment_verification === 'VERIFIED'
-        ? 'PAYMENT_VERIFIED'
-        : 'CUSTOM';
-    let selectedMessageType = defaultMessageType;
-    const messageOptions = document.createElement('div');
-    messageOptions.className = 'booking-message-options';
-    messageOptions.setAttribute('role', 'group');
-    messageOptions.setAttribute('aria-label', 'Choose WhatsApp message');
-    const messageOptionButtons = [
-      ['ACCEPTANCE', 'Booking accepted + payment link'],
-      ['PAYMENT_VERIFIED', 'Payment verified'],
-      ['CUSTOM', 'Custom message'],
-    ].map(([type, label]) => {
-      const option = button(label, 'booking-message-option', () => {
-        selectedMessageType = type;
-        messageOptionButtons.forEach(([optionType, optionButton]) => {
-          const active = optionType === type;
-          optionButton.classList.toggle('is-active', active);
-          optionButton.setAttribute('aria-pressed', String(active));
-        });
-        customMessage.hidden = type !== 'CUSTOM';
-        customMessage.required = type === 'CUSTOM';
-      });
-      option.setAttribute('aria-pressed', String(type === selectedMessageType));
-      return [type, option];
-    });
-    messageOptionButtons.find(([type]) => type === selectedMessageType)?.[1].classList.add('is-active');
-    messageOptionButtons.forEach(([, option]) => messageOptions.append(option));
-    messageForm.append(messageOptions);
     const customMessage = document.createElement('textarea');
     customMessage.name = 'message';
     customMessage.rows = 4;
     customMessage.maxLength = 1000;
-    customMessage.placeholder = 'Write a message to the customer…';
-    customMessage.hidden = selectedMessageType !== 'CUSTOM';
-    customMessage.required = selectedMessageType === 'CUSTOM';
-    customMessage.setAttribute('aria-label', 'Custom WhatsApp message');
+    customMessage.placeholder = 'Write a message to the customer when needed.';
+    customMessage.required = true;
+    customMessage.setAttribute('aria-label', 'Message to the customer');
     messageForm.append(customMessage);
     const sendMessage = document.createElement('a');
     sendMessage.className = 'admin-view-button';
-    sendMessage.textContent = 'Open WhatsApp with message';
+    sendMessage.textContent = 'Message on WhatsApp';
     sendMessage.target = '_blank';
     sendMessage.rel = 'noopener noreferrer';
     sendMessage.href = '#';
@@ -439,7 +415,7 @@ function renderBookingDetails(result, feedback = null) {
     messageFeedback.hidden = true;
     messageForm.append(messageFeedback);
     const messageHelp = document.createElement('small');
-    messageHelp.textContent = 'Choose a message, then open it as a WhatsApp draft. Review the chat and tap Send in WhatsApp; this admin page never sends the message automatically.';
+    messageHelp.textContent = 'This opens a WhatsApp draft. Review it and tap Send in WhatsApp.';
     messageForm.append(messageHelp);
     sendMessage.addEventListener('click', async (event) => {
       const setMessageFeedback = (text, isError = false) => {
@@ -448,27 +424,10 @@ function renderBookingDetails(result, feedback = null) {
         messageFeedback.hidden = !text;
       };
       setMessageFeedback('');
-      if (selectedMessageType === 'ACCEPTANCE'
-        && (booking.status !== 'APPROVED' || booking.payment_status === 'PAID')) {
-        event.preventDefault();
-        setMessageFeedback('Approve this unpaid booking before preparing its acceptance and payment link.', true);
-        return;
-      }
-      if (selectedMessageType === 'PAYMENT_VERIFIED'
-        && (booking.payment_status !== 'PAID' || booking.payment_verification !== 'VERIFIED')) {
-        event.preventDefault();
-        setMessageFeedback('Mark the payment as paid and verified before preparing this message.', true);
-        return;
-      }
-      if (selectedMessageType === 'CUSTOM' && !customMessage.value.trim()) {
+      if (!customMessage.value.trim()) {
         event.preventDefault();
         setMessageFeedback('Write a message before opening WhatsApp.', true);
         customMessage.focus();
-        return;
-      }
-      if (!booking.whatsapp_opt_in) {
-        event.preventDefault();
-        setMessageFeedback('The customer has not opted in to WhatsApp updates.', true);
         return;
       }
       const whatsappNumber = /^0\d{10}$/.test(contactNumber)
@@ -479,17 +438,7 @@ function renderBookingDetails(result, feedback = null) {
         setMessageFeedback('The customer WhatsApp number is not valid. Add it in international format.', true);
         return;
       }
-      let text;
-      if (selectedMessageType === 'ACCEPTANCE') {
-        const paymentPage = new URL('/payment.html', window.location.origin);
-        paymentPage.searchParams.set('reference', booking.reference);
-        text = `Hello ${booking.full_name}, your booking request (${reference(booking)}) has been approved.\n\nService: ${serviceName(booking)}\nAppointment: ${dateLabel(booking.preferred_date)} at ${timeLabel(booking.preferred_time)}\n\nReview your confirmed amount and continue to secure payment here: ${paymentPage.toString()}\n\nYour appointment is confirmed after the payment and final approval have been verified.`;
-      } else if (selectedMessageType === 'PAYMENT_VERIFIED') {
-        text = `Hello ${booking.full_name}, we have verified your payment of ${money(booking.amount_received || booking.amount_expected)} for booking ${reference(booking)}. Thank you.`;
-      } else {
-        text = customMessage.value.trim();
-      }
-      sendMessage.href = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(text)}`;
+      sendMessage.href = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(customMessage.value.trim())}`;
       setMessageFeedback('WhatsApp will open with the message drafted. Review it and tap Send in WhatsApp.');
     });
     customerSection.append(messageForm);
@@ -519,13 +468,18 @@ function renderBookingDetails(result, feedback = null) {
   renderDetailSection(root, 'Appointment date and time', [
     ['Requested date', dateLabel(booking.preferred_date)],
     ['Requested time', timeLabel(booking.preferred_time)],
+    ...(booking.proposed_preferred_date ? [
+      ['Proposed date', dateLabel(booking.proposed_preferred_date)],
+      ['Proposed time', timeLabel(booking.proposed_preferred_time)],
+      ['Customer response', booking.proposed_response ? statusLabel(booking.proposed_response) : 'Awaiting response'],
+    ] : []),
   ]);
   const paymentSection = document.createElement('section');
   paymentSection.className = 'booking-detail-section';
   addText(paymentSection, 'h3', 'Payment status');
   const paymentInfo = document.createElement('div');
   paymentInfo.className = 'booking-detail-grid';
-  addDetailField(paymentInfo, 'Status', statusLabel(booking.payment_status));
+  addDetailField(paymentInfo, 'Status', paymentStatusLabel(booking.payment_status));
   addDetailField(paymentInfo, 'Amount expected', money(booking.amount_expected));
   addDetailField(paymentInfo, 'Amount received', money(booking.amount_received));
   paymentSection.append(paymentInfo);
@@ -584,7 +538,7 @@ function renderBookingDetails(result, feedback = null) {
   paymentExtras.append(paymentDocumentForm);
   const paymentForm = document.createElement('form');
   paymentForm.className = 'booking-edit-form';
-  const paymentStatusValues = [[booking.payment_status, statusLabel(booking.payment_status)]];
+  const paymentStatusValues = [[booking.payment_status, paymentStatusLabel(booking.payment_status)]];
   if (['PAID', 'REFUND_PENDING'].includes(booking.payment_status)) {
     paymentStatusValues.push(['REFUND_PENDING', 'Refund pending'], ['REFUNDED', 'Refunded']);
   }
@@ -668,6 +622,9 @@ function renderBookingDetails(result, feedback = null) {
     ['COMPLETED', 'Completed'],
     ['CANCELLED', 'Cancelled'],
   ];
+  if (booking.status === 'RESCHEDULE_PROPOSED' && booking.proposed_response === 'ACCEPTED') {
+    statusChoices.find(([status]) => status === 'CONFIRMED')[1] = 'Confirm accepted proposed date';
+  }
   if (!statusChoices.some(([status]) => status === booking.status)) {
     statusChoices.splice(1, 0, [booking.status, statusLabel(booking.status)]);
   }
@@ -682,7 +639,7 @@ function renderBookingDetails(result, feedback = null) {
   const proposedTime = inputField(statusForm, 'Proposed time', 'time', 'proposedTime', booking.proposed_preferred_time || '');
   const proposedDateField = proposedDate.closest('.booking-edit-field');
   const proposedTimeField = proposedTime.closest('.booking-edit-field');
-  const declineReason = inputField(statusForm, 'Customer-facing decline explanation (optional)', 'text', 'declineReason', booking.decline_reason || '');
+  const declineReason = inputField(statusForm, 'Reason for declining (required)', 'text', 'declineReason', booking.decline_reason || '');
   declineReason.maxLength = 1000;
   const appointmentInstructions = inputField(statusForm, 'Appointment instructions (optional)', 'text', 'appointmentInstructions', booking.appointment_instructions || '');
   appointmentInstructions.maxLength = 2000;
@@ -693,6 +650,7 @@ function renderBookingDetails(result, feedback = null) {
     proposedDate.required = isProposing;
     proposedTime.required = isProposing;
     declineReason.closest('.booking-edit-field').hidden = nextStatus.value !== 'DECLINED';
+    declineReason.required = nextStatus.value === 'DECLINED';
     appointmentInstructions.closest('.booking-edit-field').hidden = nextStatus.value !== 'CONFIRMED';
   };
   const updateResolutionVisibility = () => {
@@ -1013,24 +971,6 @@ async function loadAvailability() {
       row.append(opens, closes);
       hours.append(row);
     });
-    const durations = document.querySelector('#service-duration-fields');
-    durations.replaceChildren();
-    const byService = new Map(result.durations.map((item) => [item.service, item.duration_minutes]));
-    SERVICES.forEach(([key, name]) => {
-      const label = document.createElement('label');
-      label.className = 'admin-duration-row';
-      addText(label, 'span', name);
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.name = `duration-${key}`;
-      input.min = '15';
-      input.max = '720';
-      input.step = '15';
-      input.required = true;
-      input.value = byService.get(key) || 60;
-      label.append(input);
-      durations.append(label);
-    });
     renderAvailabilityBlocks(result.blocks);
   } catch (error) {
     showMessage(error.message);
@@ -1081,9 +1021,33 @@ async function loadCalendar() {
   list.replaceChildren();
   try {
     const result = await getJson(`/api/v1/admin/calendar?${new URLSearchParams(range)}`, 'Could not load the calendar.');
-    document.querySelector('#calendar-range').textContent = `${dateLabel(range.from)} – ${dateLabel(range.to)} · ${result.bookings.length} appointments`;
-    result.bookings.forEach((booking) => list.append(buildBookingCard(booking)));
-    if (!result.bookings.length) addText(list, 'p', 'No appointments in this period.', 'admin-empty');
+    const blocks = result.blocks || [];
+    document.querySelector('#calendar-range').textContent = `${dateLabel(range.from)} – ${dateLabel(range.to)} · ${result.bookings.length} appointments/proposals · ${blocks.length} blocked periods`;
+    result.bookings.forEach((booking) => {
+      const card = buildBookingCard({
+        ...booking,
+        preferred_date: booking.calendar_date,
+        preferred_time: booking.calendar_time,
+      }, false);
+      if (booking.is_proposed) {
+        const state = booking.proposed_response === 'ACCEPTED'
+          ? 'Proposed date · customer accepted, awaiting admin confirmation'
+          : 'Proposed date · awaiting customer response';
+        card.querySelector('.admin-list-badges').append(makeBadge(state, 'booking-status'));
+      }
+      list.append(card);
+    });
+    blocks.forEach((block) => {
+      const card = document.createElement('article');
+      card.className = 'admin-list-card';
+      const label = block.calendar_time
+        ? `${dateLabel(block.calendar_date)} · ${timeLabel(block.calendar_time)}–${timeLabel(block.ends_at)}`
+        : `${dateLabel(block.calendar_date)} · Full day`;
+      addText(card, 'strong', 'Blocked');
+      addText(card, 'p', `${label}${block.reason ? ` · ${block.reason}` : ''}`);
+      list.append(card);
+    });
+    if (!result.bookings.length && !blocks.length) addText(list, 'p', 'No appointments or blocked periods in this range.', 'admin-empty');
   } catch (error) {
     showMessage(error.message);
   }
@@ -1174,12 +1138,8 @@ document.querySelector('#hours-form').addEventListener('submit', async (event) =
       closesAt: inputs[2].value,
     };
   });
-  const durations = SERVICES.map(([service]) => ({
-    service,
-    durationMinutes: Number(form.querySelector(`[name="duration-${service}"]`).value),
-  }));
   try {
-    await sendJson('/api/v1/admin/availability/hours', 'PUT', { hours, durations }, 'Could not save availability settings.');
+    await sendJson('/api/v1/admin/availability/hours', 'PUT', { hours }, 'Could not save availability settings.');
     showMessage('Availability settings saved.');
   } catch (error) {
     showMessage(error.message);

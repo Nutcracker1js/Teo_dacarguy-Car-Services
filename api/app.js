@@ -28,13 +28,14 @@ function createApp({
   pool,
   corsOrigins = [],
   uploadDirectory = path.resolve(__dirname, '..', '..', 'teo-dacarguy-private-uploads'),
-  sendNotifications = async () => ({ email: 'not_configured', whatsapp: 'not_configured' }),
+  sendNotifications = async () => ({ email: 'not_configured' }),
   paymentGateway = { configured: false },
   paystackSecretKey = '',
   bookingReviewTtlHours = 48,
   paymentExpiryHours = 24,
   bookingNotifications = null,
   publicSiteUrl = '',
+  notificationEmail = process.env.NOTIFICATION_EMAIL || '',
   adminUsername,
   adminPassword,
   trustProxy = false,
@@ -146,6 +147,7 @@ function createApp({
         transaction: verification.data,
         transactionReference,
         bookingNotifications,
+        publicSiteUrl,
       });
       response.status(200).json({ received: true, paymentStatus: result.status });
     }),
@@ -239,7 +241,7 @@ function createApp({
     const reference = typeof request.body?.reference === 'string' ? request.body.reference.trim().toUpperCase() : '';
     let phone = typeof request.body?.phone === 'string' ? request.body.phone.replace(/\D/g, '') : '';
     if (/^0\d{10}$/.test(phone)) phone = `234${phone.slice(1)}`;
-    if (!/^TD-[A-Z0-9-]{4,20}$/.test(reference) || !/^[1-9]\d{7,14}$/.test(phone)) {
+    if (!/^(?:TEO-\d{4,20}|TD-[A-Z0-9-]{4,20})$/.test(reference) || !/^[1-9]\d{7,14}$/.test(phone)) {
       response.status(400).json({ error: 'Enter a valid booking reference and phone number.' });
       return;
     }
@@ -248,7 +250,8 @@ function createApp({
         to_char(preferred_time, 'HH24:MI') AS preferred_time, payment_status,
         amount_expected, amount_received,
         proposed_preferred_date::text AS proposed_preferred_date,
-        to_char(proposed_preferred_time, 'HH24:MI') AS proposed_preferred_time
+        to_char(proposed_preferred_time, 'HH24:MI') AS proposed_preferred_time,
+        proposed_response
        FROM bookings
        WHERE reference = $1
          AND (
@@ -271,7 +274,7 @@ function createApp({
     const phone = normalizeNigerianPhone(request.body?.phone);
     const token = typeof request.body?.responseToken === 'string' ? request.body.responseToken : '';
     const accept = request.body?.accept;
-    if (!/^TD-[A-Z0-9-]{4,20}$/.test(reference) || !phone
+    if (!/^(?:TEO-\d{4,20}|TD-[A-Z0-9-]{4,20})$/.test(reference) || !phone
       || !/^[A-Za-z0-9_-]{43}$/.test(token) || typeof accept !== 'boolean') {
       response.status(400).json({ error: 'The proposed appointment response is invalid.' });
       return;
@@ -279,6 +282,7 @@ function createApp({
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const client = await pool.connect();
     let notificationId = null;
+    let adminNotificationId = null;
     let booking;
     let nextStatus;
     try {
@@ -304,25 +308,26 @@ function createApp({
         return;
       }
       booking = current.rows[0];
-      nextStatus = accept
-        ? booking.payment_status === 'PAID' ? 'AWAITING_APPROVAL' : booking.proposed_previous_status
-        : booking.proposed_previous_status;
+      nextStatus = accept ? 'RESCHEDULE_PROPOSED' : booking.proposed_previous_status;
       const updated = await client.query(
         `UPDATE bookings SET status = $1,
-          preferred_date = CASE WHEN $2 THEN proposed_preferred_date ELSE preferred_date END,
-          preferred_time = CASE WHEN $2 THEN proposed_preferred_time ELSE preferred_time END,
-          proposed_preferred_date = NULL, proposed_preferred_time = NULL,
-          proposed_previous_status = NULL, proposed_response_token_hash = NULL,
+          proposed_response = CASE WHEN $2 THEN 'ACCEPTED' ELSE NULL END,
+          proposed_preferred_date = CASE WHEN $2 THEN proposed_preferred_date ELSE NULL END,
+          proposed_preferred_time = CASE WHEN $2 THEN proposed_preferred_time ELSE NULL END,
+          proposed_previous_status = CASE WHEN $2 THEN proposed_previous_status ELSE NULL END,
+          proposed_response_token_hash = CASE WHEN $2 THEN proposed_response_token_hash ELSE NULL END,
           proposed_response_expires_at = NULL
          WHERE id = $3 RETURNING status`,
-        [nextStatus || 'PENDING_REVIEW', accept, booking.id],
+        [accept ? 'RESCHEDULE_PROPOSED' : nextStatus || 'PENDING_REVIEW', accept, booking.id],
       );
       nextStatus = updated.rows[0].status;
-      await client.query(
-        `INSERT INTO booking_status_history (id, booking_id, previous_status, status)
-         VALUES ($1, $2, 'RESCHEDULE_PROPOSED', $3)`,
-        [crypto.randomUUID(), booking.id, nextStatus],
-      );
+      if (!accept) {
+        await client.query(
+          `INSERT INTO booking_status_history (id, booking_id, previous_status, status)
+           VALUES ($1, $2, 'RESCHEDULE_PROPOSED', $3)`,
+          [crypto.randomUUID(), booking.id, nextStatus],
+        );
+      }
       await client.query(
         `INSERT INTO booking_activity_history (id, booking_id, action, details)
          VALUES ($1, $2, $3, $4::jsonb)`,
@@ -332,16 +337,34 @@ function createApp({
       if (bookingNotifications) {
         notificationId = await bookingNotifications.enqueue(client, {
           bookingId: booking.id,
-          eventKey: `reschedule_response:${booking.id}:${crypto.randomUUID()}`,
-          eventType: accept ? 'BOOKING_RESCHEDULED' : 'RESCHEDULE_PROPOSAL_DECLINED',
+          eventKey: `reschedule_response:${booking.id}:${tokenHash}`,
+          eventType: accept ? 'RESCHEDULE_ACCEPTED' : 'RESCHEDULE_PROPOSAL_DECLINED',
           recipient: booking.email,
           payload: {
             customerName: booking.full_name,
             reference: booking.reference,
             service: booking.service,
             serviceOther: booking.service_other,
-            preferredDate: accept ? booking.proposed_date : booking.preferred_date,
-            preferredTime: accept ? booking.proposed_time : booking.preferred_time,
+            preferredDate: booking.preferred_date,
+            preferredTime: booking.preferred_time,
+            proposedDate: booking.proposed_date,
+            proposedTime: booking.proposed_time,
+          },
+        });
+      }
+      if (accept && bookingNotifications && notificationEmail) {
+        adminNotificationId = await bookingNotifications.enqueue(client, {
+          bookingId: booking.id,
+          eventKey: `reschedule_accepted_admin:${booking.id}:${tokenHash}`,
+          eventType: 'RESCHEDULE_ACCEPTED_ADMIN',
+          recipient: notificationEmail,
+          payload: {
+            customerName: booking.full_name,
+            reference: booking.reference,
+            service: booking.service,
+            serviceOther: booking.service_other,
+            preferredDate: booking.preferred_date,
+            preferredTime: booking.preferred_time,
             proposedDate: booking.proposed_date,
             proposedTime: booking.proposed_time,
           },
@@ -357,8 +380,11 @@ function createApp({
     const email = bookingNotifications && notificationId
       ? await bookingNotifications.deliver(notificationId)
       : { status: 'not_configured' };
+    const adminEmail = bookingNotifications && adminNotificationId
+      ? await bookingNotifications.deliver(adminNotificationId)
+      : { status: 'not_configured' };
     response.set('Cache-Control', 'no-store');
-    response.json({ accepted: accept, status: nextStatus, customerEmail: email });
+    response.json({ accepted: accept, status: nextStatus, customerEmail: email, adminEmail });
   }));
 
   app.get('/api/v1/booking-slip', bookingSlipLimit, asyncHandler(async (request, response) => {
@@ -366,7 +392,7 @@ function createApp({
       ? request.query.reference.trim().toUpperCase()
       : '';
     const token = typeof request.query.token === 'string' ? request.query.token : '';
-    if (!/^TD-[A-Z0-9-]{4,20}$/.test(reference) || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
+    if (!/^(?:TEO-\d{4,20}|TD-[A-Z0-9-]{4,20})$/.test(reference) || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
       response.status(404).json({ error: 'Booking slip not found or no longer available.' });
       return;
     }
@@ -400,7 +426,7 @@ function createApp({
   app.post('/api/v1/payments/initialize', publicPaymentLimit, asyncHandler(async (request, response) => {
     const reference = typeof request.body?.reference === 'string' ? request.body.reference.trim().toUpperCase() : '';
     const phone = normalizeNigerianPhone(request.body?.phone);
-    if (!/^TD-[A-Z0-9-]{4,20}$/.test(reference) || !phone) {
+    if (!/^(?:TEO-\d{4,20}|TD-[A-Z0-9-]{4,20})$/.test(reference) || !phone) {
       response.status(400).json({ error: 'Enter a valid booking reference and phone number.' });
       return;
     }
@@ -508,7 +534,7 @@ function createApp({
       ? request.body.transactionReference.trim()
       : '';
     const phone = normalizeNigerianPhone(request.body?.phone);
-    if (!/^TD-[A-Z0-9-]{4,20}$/.test(reference) || !phone
+    if (!/^(?:TEO-\d{4,20}|TD-[A-Z0-9-]{4,20})$/.test(reference) || !phone
       || !/^[A-Za-z0-9._=-]{1,100}$/.test(transactionReference)) {
       response.status(400).json({ error: 'The booking or transaction details are invalid.' });
       return;
@@ -564,6 +590,7 @@ function createApp({
       transaction,
       transactionReference,
       bookingNotifications,
+      publicSiteUrl,
     });
     response.set('Cache-Control', 'no-store');
     response.json({
@@ -627,15 +654,14 @@ function createApp({
       beforeInsert: (client, data) => reserveBookingSlot(client, data),
       insert: (id, data) => ({
         sql: `INSERT INTO bookings (
-          id, reference, full_name, phone, whatsapp, vehicle_make, vehicle_model, vehicle_year,
+          id, full_name, phone, whatsapp, vehicle_make, vehicle_model, vehicle_year,
           registration, service, service_other, preferred_date, preferred_time,
-          location, location_other, details, policy_accepted, policy_version, email, whatsapp_opt_in,
+          location, location_other, details, policy_accepted, policy_version, email,
           service_option, amount_expected, request_expires_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         RETURNING id, reference, status, created_at`,
         values: [
-          id, `TD-${crypto.randomBytes(10).toString('hex').toUpperCase()}`,
-          data.fullName, data.phone, data.whatsapp, data.make, data.model,
+          id, data.fullName, data.phone, data.whatsapp, data.make, data.model,
           data.year, data.registration, data.service, data.serviceOther,
           data.preferredDate, data.preferredTime, data.location, data.locationOther,
           [
@@ -646,7 +672,6 @@ function createApp({
           ].filter(Boolean).join('\n\n') || null,
           data.policyAccepted === true, 'Booking, Cancellation & Refund Policy v1',
           data.email,
-          data.whatsappOptIn === true,
           data.tintOption,
           getFixedServicePrice(data.service, data.tintOption),
           new Date(Date.now() + bookingReviewTtlHours * 60 * 60 * 1000),
@@ -662,6 +687,7 @@ function createApp({
     privateDirectory: uploads.privateDirectory,
     bookingNotifications,
     publicSiteUrl,
+    notificationEmail,
     paymentExpiryHours,
   }));
 
@@ -795,7 +821,7 @@ function createSubmissionHandler({
         notifications = await sendNotifications(submission);
       } catch (error) {
         console.error('Submission notification service failed:', error.message);
-        notifications = { email: 'failed', whatsapp: 'failed' };
+        notifications = { email: 'failed' };
       }
       let customerEmail = { status: 'not_configured' };
       if (bookingNotifications && customerNotificationId) {

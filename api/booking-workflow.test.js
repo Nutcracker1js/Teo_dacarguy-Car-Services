@@ -6,6 +6,7 @@ const { canIssueBookingSlip, createBookingSlip } = require('./booking-slip');
 const { createCustomerNotificationService } = require('./customer-notifications');
 const { applyVerifiedPayment } = require('./payment-processing');
 const { verifyPaystackSignature } = require('./payments');
+const { updateBookingStatus } = require('./admin');
 
 test('Paystack webhook signatures are checked against the exact raw payload', () => {
   const secret = 'test-paystack-secret';
@@ -120,6 +121,118 @@ test('booking slips require final confirmation and verified required payment', a
   assert.equal(canIssueBookingSlip({ ...booking, payment_verification: 'UNVERIFIED' }), false);
   const pdf = await createBookingSlip(booking);
   assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
+  assert.match(pdf.toString('latin1'), /MediaBox \[0 0 420 595\]/);
+  assert.match(pdf.toString('latin1'), /\/Subtype \/Image/);
+});
+
+test('admin confirmation commits an accepted proposed date without treating it as final approval before payment', async () => {
+  const statements = [];
+  const client = {
+    async query(sql, values = []) {
+      statements.push({ sql, values });
+      if (sql.includes('FROM bookings WHERE id = $1 FOR UPDATE')) {
+        return {
+          rowCount: 1,
+          rows: [{
+            id: 'booking-id',
+            reference: 'TEO-1000',
+            status: 'RESCHEDULE_PROPOSED',
+            payment_status: 'UNPAID',
+            payment_verification: 'UNVERIFIED',
+            amount_received: 0,
+            amount_expected: 80000,
+            service: 'TINT',
+            proposed_date: '2027-01-20',
+            proposed_time: '10:30',
+            proposed_response: 'ACCEPTED',
+          }],
+        };
+      }
+      if (sql.includes('SELECT is_open, opens_at::text')) {
+        return { rows: [{ is_open: true, opens_at: '08:00:00', closes_at: '19:00:00' }] };
+      }
+      if (sql.includes('SELECT COUNT(*)::int AS total FROM booking_working_hours')) {
+        return { rows: [{ total: 7 }] };
+      }
+      if (sql.includes('SELECT duration_minutes FROM booking_service_durations')) {
+        return { rows: [{ duration_minutes: 60 }] };
+      }
+      if (sql.includes('FROM booking_availability_blocks')) return { rows: [], rowCount: 0 };
+      if (sql.includes('SELECT b.id')) return { rows: [], rowCount: 0 };
+      if (sql.startsWith('UPDATE bookings SET status')) {
+        return {
+          rowCount: 1,
+          rows: [{
+            id: 'booking-id',
+            reference: 'TEO-1000',
+            status: values[0],
+            payment_status: 'UNPAID',
+          }],
+        };
+      }
+      return { rowCount: 1, rows: [] };
+    },
+    release() {},
+  };
+  const result = await updateBookingStatus(
+    { async connect() { return client; } },
+    'booking-id',
+    'CONFIRMED',
+    undefined,
+  );
+
+  assert.equal(result.httpStatus, 200);
+  assert.equal(result.body.status, 'APPROVED');
+  assert.equal(result.body.rescheduleConfirmed, true);
+  assert.equal(result.body.confirmedProposedDate, '2027-01-20');
+  assert.equal(result.body.confirmedProposedTime, '10:30');
+  assert.equal(statements.find(({ sql }) => sql.startsWith('UPDATE bookings SET status')).values[0], 'APPROVED');
+  assert.ok(statements.some(({ sql }) => sql.includes('preferred_date = CASE WHEN $12 THEN proposed_preferred_date')));
+  assert.ok(statements.some(({ sql }) => sql.includes("INSERT INTO booking_status_history")));
+  assert.ok(statements.some(({ sql }) => sql === 'COMMIT'));
+});
+
+test('rescheduling cannot be confirmed when the accepted proposed slot is no longer available', async () => {
+  const client = {
+    async query(sql) {
+      if (sql.includes('FROM bookings WHERE id = $1 FOR UPDATE')) {
+        return {
+          rowCount: 1,
+          rows: [{
+            id: 'booking-id',
+            reference: 'TEO-1000',
+            status: 'RESCHEDULE_PROPOSED',
+            payment_status: 'UNPAID',
+            payment_verification: 'UNVERIFIED',
+            amount_received: 0,
+            amount_expected: 80000,
+            service: 'TINT',
+            proposed_date: '2027-01-20',
+            proposed_time: '10:30',
+            proposed_response: 'ACCEPTED',
+          }],
+        };
+      }
+      if (sql.includes('SELECT is_open, opens_at::text')) {
+        return { rows: [{ is_open: true, opens_at: '08:00:00', closes_at: '19:00:00' }] };
+      }
+      if (sql.includes('SELECT COUNT(*)::int AS total FROM booking_working_hours')) {
+        return { rows: [{ total: 7 }] };
+      }
+      if (sql.includes('SELECT duration_minutes FROM booking_service_durations')) {
+        return { rows: [{ duration_minutes: 60 }] };
+      }
+      if (sql.includes('FROM booking_availability_blocks')) return { rows: [], rowCount: 0 };
+      if (sql.includes('SELECT b.id')) return { rowCount: 1, rows: [{ id: 'conflicting-booking' }] };
+      return { rowCount: 1, rows: [] };
+    },
+    release() {},
+  };
+
+  await assert.rejects(
+    updateBookingStatus({ async connect() { return client; } }, 'booking-id', 'CONFIRMED'),
+    /just been reserved/,
+  );
 });
 
 test('failed customer emails are reported and can be retried', async () => {
@@ -204,4 +317,60 @@ test('repeating an approval email event retries its failed outbox entry', async 
 
   assert.equal(result.status, 'sent');
   assert.equal(providerCalls, 1);
+});
+
+test('repeating a proposed-date event retries its existing failed outbox email', async () => {
+  let deliveryStatus = 'PENDING';
+  let providerCalls = 0;
+  const pool = {
+    async connect() {
+      return {
+        async query(sql) {
+          if (sql.includes('INSERT INTO booking_notifications')) return { rowCount: 0, rows: [] };
+          return { rowCount: 1, rows: [] };
+        },
+        release() {},
+      };
+    },
+    async query(sql) {
+      if (sql.includes('SELECT id, delivery_status')) {
+        return { rowCount: 1, rows: [{ id: 'proposal-email', delivery_status: deliveryStatus }] };
+      }
+      if (sql.includes("SET delivery_status = 'SENDING'")) {
+        if (!['PENDING', 'FAILED'].includes(deliveryStatus)) return { rowCount: 0, rows: [] };
+        deliveryStatus = 'SENDING';
+        return {
+          rowCount: 1,
+          rows: [{
+            id: 'proposal-email',
+            event_type: 'RESCHEDULE_PROPOSED',
+            recipient: 'customer@example.com',
+            payload: { reference: 'TEO-1000', proposedDate: '2027-01-20' },
+          }],
+        };
+      }
+      if (sql.includes("SET delivery_status = 'FAILED'")) deliveryStatus = 'FAILED';
+      if (sql.includes("SET delivery_status = 'SENT'")) deliveryStatus = 'SENT';
+      return { rowCount: 1, rows: [] };
+    },
+  };
+  const service = createCustomerNotificationService({
+    pool,
+    async sendEmail() {
+      providerCalls += 1;
+      if (providerCalls === 1) throw new Error('SMTP temporarily unavailable.');
+    },
+  });
+  const event = {
+    bookingId: 'booking-id',
+    eventKey: 'reschedule_proposed:booking-id:2027-01-20:10:30',
+    eventType: 'RESCHEDULE_PROPOSED',
+    recipient: 'customer@example.com',
+    payload: { reference: 'TEO-1000', proposedDate: '2027-01-20' },
+  };
+
+  assert.equal((await service.deliver('proposal-email')).status, 'failed');
+  assert.equal((await service.enqueueAndDeliver(event)).status, 'sent');
+  assert.equal(providerCalls, 2);
+  assert.equal(deliveryStatus, 'SENT');
 });

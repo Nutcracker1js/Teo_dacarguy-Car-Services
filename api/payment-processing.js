@@ -5,6 +5,7 @@ async function applyVerifiedPayment({
   transaction,
   transactionReference,
   bookingNotifications,
+  publicSiteUrl = '',
 }) {
   if (!transaction || transaction.status !== 'success'
     || transaction.currency !== 'NGN'
@@ -97,6 +98,7 @@ async function applyVerifiedPayment({
           amountReceived: transaction.amount / 100,
           transactionReference,
           status: updated.rows[0].status,
+          bookingStatusUrl: createBookingStatusUrl(publicSiteUrl, booking.reference),
         },
       });
     }
@@ -117,6 +119,18 @@ async function applyVerifiedPayment({
     bookingStatus: bookingResult.status,
     email,
   };
+}
+
+function createBookingStatusUrl(publicSiteUrl, reference) {
+  try {
+    const base = new URL(publicSiteUrl);
+    if (base.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(base.hostname)) return null;
+    const url = new URL('/booking-status.html', base);
+    url.searchParams.set('reference', reference);
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function paymentError(status, message) {

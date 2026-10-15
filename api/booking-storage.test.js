@@ -37,6 +37,8 @@ test('browser storage preserves drafts and remembers up to ten matching bookings
     preferredDate: '2027-01-20',
   });
   assert.equal(storage.getBooking('td-1042').phone, '+234 801 234 5678');
+  assert.equal(storage.rememberBooking('TEO-1000', '08012345678'), true);
+  assert.equal(storage.getBooking('teo-1000').reference, 'TEO-1000');
 
   for (let index = 0; index < 12; index += 1) {
     storage.rememberBooking(`TD-REF-${String(index).padStart(4, '0')}`, '08012345678');

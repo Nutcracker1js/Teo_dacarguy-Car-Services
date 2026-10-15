@@ -13,25 +13,11 @@ function getNotificationReadiness(environment = process.env) {
   if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
     emailMissing.push('SMTP_PORT');
   }
-  const whatsappMissing = [
-    ['WHATSAPP_ACCESS_TOKEN', environment.WHATSAPP_ACCESS_TOKEN],
-    ['WHATSAPP_PHONE_NUMBER_ID', environment.WHATSAPP_PHONE_NUMBER_ID],
-    ['WHATSAPP_RECIPIENT', environment.WHATSAPP_RECIPIENT],
-    ['WHATSAPP_TEMPLATE_NAME', environment.WHATSAPP_TEMPLATE_NAME],
-  ].filter(([, value]) => !value).map(([key]) => key);
-  if (environment.WHATSAPP_RECIPIENT && !/^\+?[1-9]\d{7,14}$/.test(environment.WHATSAPP_RECIPIENT)) {
-    whatsappMissing.push('WHATSAPP_RECIPIENT (use international format)');
-  }
-
-  return {
-    email: { configured: emailMissing.length === 0, missing: emailMissing },
-    whatsapp: { configured: whatsappMissing.length === 0, missing: whatsappMissing },
-  };
+  return { email: { configured: emailMissing.length === 0, missing: emailMissing } };
 }
 
 function createNotificationSender(
   environment = process.env,
-  fetchImplementation = fetch,
   transportFactory = nodemailer.createTransport,
 ) {
   const readiness = getNotificationReadiness(environment);
@@ -53,11 +39,8 @@ function createNotificationSender(
     : null;
 
   return async function sendNotifications(submission) {
-    const [email, whatsapp] = await Promise.all([
-      sendEmail(transport, environment, readiness.email, submission),
-      sendWhatsApp(fetchImplementation, environment, readiness.whatsapp, submission),
-    ]);
-    return { email, whatsapp };
+    const email = await sendEmail(transport, environment, readiness.email, submission);
+    return { email };
   };
 }
 
@@ -111,21 +94,33 @@ function renderCustomerEmail(notification) {
     BOOKING_QUOTE_REQUIRED: ['Your booking request has been reviewed', 'Teo needs to confirm the service quotation before payment can be arranged. Your appointment is not yet confirmed.'],
     BOOKING_DECLINED: ['An update about your booking', 'Teo is unable to accept this booking as requested.'],
     RESCHEDULE_PROPOSED: ['A new appointment time is proposed', 'Please review the proposed time and confirm or decline it using the secure response link below.'],
+    RESCHEDULE_CONFIRMED: ['Your new appointment date is confirmed', 'Teo has confirmed the date you accepted. Use the secure payment link below if payment is still due.'],
+    RESCHEDULE_ACCEPTED: ['Your response was recorded', 'You accepted the proposed date. It is not final until Teo confirms it and sends you a separate email.'],
+    RESCHEDULE_ACCEPTED_ADMIN: ['Customer accepted a proposed appointment date', 'The customer accepted the proposal below. Confirm the new date in the admin dashboard to finalize it.'],
     BOOKING_RESCHEDULED: ['Your appointment details have been updated', 'Your response to the proposed time has been recorded. Check the details below and wait for any further approval instructions.'],
     RESCHEDULE_PROPOSAL_DECLINED: ['Your reschedule response was received', 'The proposed appointment time was declined. Your original appointment request remains unchanged.'],
     RESCHEDULE_PROPOSAL_EXPIRED: ['Your appointment proposal expired', 'The response period for the proposed appointment has ended. Contact Teo to arrange another time.'],
     PAYMENT_SUCCESSFUL: ['Your payment has been verified', 'Paystack has verified your payment. The appointment remains subject to final approval.'],
     APPOINTMENT_CONFIRMED: ['Your appointment is confirmed', 'Teo has confirmed your appointment.'],
+    JOB_COMPLETED: ['Thank you for choosing Teo DaCarguy', 'Your service has been marked complete. Thank you for trusting Teo DaCarguy Car Services with your vehicle.'],
     BOOKING_CANCELLED: ['Your booking has been updated', 'Your booking has been cancelled or rescheduled. Review the details below and contact us if you need help.'],
     BOOKING_EXPIRED: ['Your booking request has expired', 'The request or payment period ended before the booking was completed. Please contact Teo if you would like to make a new request.'],
     BOOKING_SLIP_AVAILABLE: ['Your booking slip is ready', 'Your secure booking slip is available using the link below.'],
   };
-  const [title, intro] = headings[notification.eventType] || ['Booking update', 'There is an update about your booking.'];
+  const [title, defaultIntro] = headings[notification.eventType] || ['Booking update', 'There is an update about your booking.'];
+  const intro = notification.eventType === 'RESCHEDULE_CONFIRMED'
+    && !notification.paymentPageUrl && !notification.checkoutUrl
+    && notification.paymentStatus !== 'PAID'
+    ? 'Teo confirmed the proposed date. The booking still needs its final price or payment instructions; Teo will email you when they are ready.'
+    : defaultIntro;
   const rows = [
     ['Booking reference', reference],
     ['Service', service],
     ['Appointment', appointment],
   ];
+  if (notification.vehicle) rows.push(['Vehicle', String(notification.vehicle).slice(0, 160)]);
+  if (notification.registration) rows.push(['Registration', String(notification.registration).slice(0, 32)]);
+  if (notification.location) rows.push(['Location', String(notification.location).slice(0, 240)]);
   if (notification.amountExpected !== null && notification.amountExpected !== undefined) rows.push(['Agreed price', amount]);
   if (notification.eventType === 'PAYMENT_SUCCESSFUL') {
     rows.push(['Amount paid', received]);
@@ -136,13 +131,19 @@ function renderCustomerEmail(notification) {
   if (proposed) rows.push(['Proposed appointment', proposed]);
   const lines = rows.map(([label, value]) => `${label}: ${value}`);
   if (notification.paymentPageUrl) lines.push(`Open the secure payment page: ${notification.paymentPageUrl}`);
+  if (notification.bookingStatusUrl) lines.push(`View your booking and receipt details: ${notification.bookingStatusUrl}`);
+  if (notification.refundStatus && notification.refundStatus !== 'NONE') {
+    lines.push(`Refund update: ${statusText(notification.refundStatus)}.`);
+  }
+  if (notification.resolution) lines.push(`Booking resolution: ${statusText(notification.resolution)}.`);
+  if (notification.paymentStatus) lines.push(`Payment status: ${statusText(notification.paymentStatus)}.`);
   if (notification.declineReason) lines.push(`Message from Teo: ${String(notification.declineReason).slice(0, 1000)}`);
   if (notification.instructions) lines.push(`Instructions: ${String(notification.instructions).slice(0, 2000)}`);
   if (notification.checkoutUrl) lines.push(`Secure Paystack checkout: ${notification.checkoutUrl}`);
   if (notification.paymentNotice) lines.push(`Payment update: ${String(notification.paymentNotice).slice(0, 500)}`);
   if (notification.responseUrl) lines.push(`Respond to the proposed time: ${notification.responseUrl}`);
   if (notification.slipUrl) lines.push(`Download your secure booking slip: ${notification.slipUrl}`);
-  if (notification.eventType !== 'APPOINTMENT_CONFIRMED') {
+  if (!['APPOINTMENT_CONFIRMED', 'RESCHEDULE_CONFIRMED', 'JOB_COMPLETED'].includes(notification.eventType)) {
     lines.push('', 'Payment alone does not confirm an appointment. You will receive a separate email when Teo confirms the appointment.');
   }
   const escaped = (value) => String(value).replace(/[&<>"']/g, (character) => ({
@@ -154,6 +155,7 @@ function renderCustomerEmail(notification) {
   const links = [
     notification.checkoutUrl && `<p><a href="${escaped(notification.checkoutUrl)}">Continue to secure Paystack checkout</a></p>`,
     notification.paymentPageUrl && `<p><a href="${escaped(notification.paymentPageUrl)}">Open the secure payment page</a></p>`,
+    notification.bookingStatusUrl && `<p><a href="${escaped(notification.bookingStatusUrl)}">View your booking and receipt details</a></p>`,
     notification.responseUrl && `<p><a href="${escaped(notification.responseUrl)}">Respond to the proposed appointment</a></p>`,
     notification.slipUrl && `<p><a href="${escaped(notification.slipUrl)}">Download your booking slip</a></p>`,
   ].filter(Boolean).join('');
@@ -165,7 +167,7 @@ function renderCustomerEmail(notification) {
   return {
     subject: `${title} · ${reference}`,
     text: [`Hello ${name},`, '', intro, '', ...lines, '', 'Teo DaCarguy Car Services'].join('\n'),
-    html: `<!doctype html><html><body style="margin:0;background:#f4f4f4;font-family:Arial,sans-serif;color:#171717"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 8px"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border-top:5px solid #c7a45c;padding:28px"><tr><td><p style="font-weight:bold;letter-spacing:1px">TEO DACARGUY CAR SERVICES</p><h1 style="font-size:24px">${escaped(title)}</h1><p>Hello ${escaped(name)}, ${escaped(intro)}</p><table role="presentation" cellspacing="0" cellpadding="0">${list}</table>${extra}${links}${notification.eventType === 'APPOINTMENT_CONFIRMED' ? '' : '<p style="margin-top:28px;font-size:13px;color:#555">Payment alone does not confirm an appointment. You will receive a separate email when Teo confirms the appointment.</p>'}</td></tr></table></td></tr></table></body></html>`,
+    html: `<!doctype html><html><body style="margin:0;background:#f4f4f4;font-family:Arial,sans-serif;color:#171717"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 8px"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border-top:5px solid #c62026;padding:28px"><tr><td><p style="font-weight:bold;letter-spacing:1px">TEO DACARGUY CAR SERVICES</p><h1 style="font-size:24px">${escaped(title)}</h1><p>Hello ${escaped(name)}, ${escaped(intro)}</p><table role="presentation" cellspacing="0" cellpadding="0">${list}</table>${extra}${links}${['APPOINTMENT_CONFIRMED', 'RESCHEDULE_CONFIRMED', 'JOB_COMPLETED'].includes(notification.eventType) ? '' : '<p style="margin-top:28px;font-size:13px;color:#555">Payment alone does not confirm an appointment. You will receive a separate email when Teo confirms the appointment.</p>'}</td></tr></table></td></tr></table></body></html>`,
   };
 }
 
@@ -176,187 +178,8 @@ function formatMoney(value) {
     : 'To be confirmed';
 }
 
-function createBookingApprovalNotifier(environment = process.env, fetchImplementation = fetch) {
-  const required = [
-    'WHATSAPP_ACCESS_TOKEN',
-    'WHATSAPP_PHONE_NUMBER_ID',
-    'WHATSAPP_APPROVAL_TEMPLATE_NAME',
-    'PUBLIC_SITE_URL',
-  ];
-  const missing = required.filter((key) => !environment[key]);
-  try {
-    const publicUrl = new URL(environment.PUBLIC_SITE_URL);
-    if (publicUrl.protocol !== 'https:' && publicUrl.hostname !== 'localhost' && publicUrl.hostname !== '127.0.0.1') {
-      missing.push('PUBLIC_SITE_URL (must use HTTPS)');
-    }
-  } catch {
-    if (environment.PUBLIC_SITE_URL) missing.push('PUBLIC_SITE_URL (must be an absolute URL)');
-  }
-  if (environment.WHATSAPP_ACCESS_TOKEN && environment.WHATSAPP_PHONE_NUMBER_ID
-    && environment.WHATSAPP_APPROVAL_TEMPLATE_NAME
-    && !environment.WHATSAPP_PHONE_NUMBER_ID.match(/^\d+$/)) {
-    missing.push('WHATSAPP_PHONE_NUMBER_ID (must contain digits only)');
-  }
-
-  const notifyBookingApproval = async function notifyBookingApproval(booking) {
-    if (missing.length) {
-      return { status: 'not_configured', missing };
-    }
-    if (booking.whatsapp_opt_in !== true) {
-      return { status: 'failed', error: 'The customer has not opted in to WhatsApp booking updates.' };
-    }
-    let checkoutSuffix;
-    try {
-      const checkoutUrl = new URL(booking.payment_url);
-      if (checkoutUrl.protocol !== 'https:' || checkoutUrl.hostname !== 'checkout.paystack.com'
-        || !checkoutUrl.pathname.startsWith('/') || checkoutUrl.pathname.length < 2) {
-        throw new Error('not a Paystack checkout URL');
-      }
-      checkoutSuffix = `${checkoutUrl.pathname.slice(1)}${checkoutUrl.search}${checkoutUrl.hash}`;
-    } catch {
-      return { status: 'failed', error: 'A valid Paystack checkout link is required before sending the acceptance message.' };
-    }
-    let customerNumber = String(booking.whatsapp || booking.phone || '').replace(/\D/g, '');
-    if (/^0\d{10}$/.test(customerNumber)) customerNumber = `234${customerNumber.slice(1)}`;
-    if (!/^[1-9]\d{7,14}$/.test(customerNumber)) {
-      return { status: 'failed', error: 'Customer phone number is not in a valid international format.' };
-    }
-    const statusUrl = new URL('/booking-status.html', environment.PUBLIC_SITE_URL);
-    statusUrl.searchParams.set('reference', booking.reference);
-    const appointment = `${booking.service} · ${booking.preferred_date}${booking.preferred_time ? ` at ${booking.preferred_time}` : ''}. View acceptance and proceed to payment using the link below.`;
-    try {
-      const response = await fetchImplementation(
-        `https://graph.facebook.com/${environment.WHATSAPP_GRAPH_VERSION || 'v23.0'}/${environment.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${environment.WHATSAPP_ACCESS_TOKEN}`,
-            'Content-Type': 'application/json',
-          },
-          signal: AbortSignal.timeout(10000),
-          body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            to: customerNumber,
-            type: 'template',
-            template: {
-              name: environment.WHATSAPP_APPROVAL_TEMPLATE_NAME,
-              language: { code: environment.WHATSAPP_TEMPLATE_LANGUAGE || 'en_US' },
-              components: [{
-                type: 'body',
-                parameters: [
-                  { type: 'text', text: booking.full_name.slice(0, 120) },
-                  { type: 'text', text: booking.reference.slice(0, 24) },
-                  { type: 'text', text: appointment.slice(0, 200) },
-                  { type: 'text', text: statusUrl.toString().slice(0, 1000) },
-                ],
-              }, {
-                type: 'button',
-                sub_type: 'url',
-                index: '0',
-                parameters: [{ type: 'text', text: checkoutSuffix.slice(0, 512) }],
-              }],
-            },
-          }),
-        },
-      );
-      if (!response.ok) throw new Error(`WhatsApp provider returned HTTP ${response.status}.`);
-      return { status: 'sent' };
-    } catch (error) {
-      reportDeliveryFailure('booking_approval_whatsapp', booking.reference, error);
-      return { status: 'failed', error: error.message };
-    }
-  };
-  notifyBookingApproval.readiness = { configured: missing.length === 0, missing };
-  return notifyBookingApproval;
-}
-
-function createBookingMessageSender(environment = process.env, fetchImplementation = fetch) {
-  return async function sendBookingMessage(booking, { type, message }) {
-    if (!environment.WHATSAPP_ACCESS_TOKEN || !environment.WHATSAPP_PHONE_NUMBER_ID) {
-      return {
-        status: 'not_configured',
-        missing: ['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'].filter((key) => !environment[key]),
-      };
-    }
-    if (booking.whatsapp_opt_in !== true) {
-      return { status: 'failed', error: 'The customer has not opted in to WhatsApp booking updates.' };
-    }
-    const recipient = String(booking.whatsapp || booking.phone || '').replace(/\D/g, '')
-      .replace(/^0(\d{10})$/, '234$1');
-    if (!/^[1-9]\d{7,14}$/.test(recipient)) {
-      return { status: 'failed', error: 'Customer phone number is not in a valid international format.' };
-    }
-
-    let payload;
-    if (type === 'PAYMENT_VERIFIED') {
-      const templateName = environment.WHATSAPP_PAYMENT_VERIFIED_TEMPLATE_NAME;
-      if (!templateName) {
-        return { status: 'not_configured', missing: ['WHATSAPP_PAYMENT_VERIFIED_TEMPLATE_NAME'] };
-      }
-      payload = {
-        messaging_product: 'whatsapp',
-        to: recipient,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: { code: environment.WHATSAPP_TEMPLATE_LANGUAGE || 'en_US' },
-          components: [{
-            type: 'body',
-            parameters: [
-              { type: 'text', text: booking.full_name.slice(0, 120) },
-              { type: 'text', text: booking.reference.slice(0, 24) },
-              { type: 'text', text: moneyText(booking.amount_received || booking.amount_expected) },
-            ],
-          }],
-        },
-      };
-    } else if (type === 'CUSTOM') {
-      payload = {
-        messaging_product: 'whatsapp',
-        to: recipient,
-        type: 'text',
-        text: { preview_url: true, body: message },
-      };
-    } else {
-      return { status: 'failed', error: 'Choose a supported customer message.' };
-    }
-
-    try {
-      const response = await fetchImplementation(
-        `https://graph.facebook.com/${environment.WHATSAPP_GRAPH_VERSION || 'v23.0'}/${environment.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `******`,
-            'Content-Type': 'application/json',
-          },
-          signal: AbortSignal.timeout(10000),
-          body: JSON.stringify(payload),
-        },
-      );
-      if (!response.ok) {
-        let details = '';
-        try {
-          const result = await response.json();
-          details = typeof result.error?.message === 'string' ? ` ${result.error.message}` : '';
-        } catch {
-          details = '';
-        }
-        throw new Error(`WhatsApp provider returned HTTP ${response.status}.${details}`);
-      }
-      return { status: 'sent' };
-    } catch (error) {
-      reportDeliveryFailure(`booking_${type.toLowerCase()}_whatsapp`, booking.reference, error);
-      return { status: 'failed', error: error.message };
-    }
-  };
-}
-
-function moneyText(value) {
-  const amount = Number(value);
-  return Number.isFinite(amount)
-    ? `NGN ${amount.toLocaleString('en-NG', { maximumFractionDigits: 2 })}`
-    : 'the confirmed amount';
+function statusText(value) {
+  return String(value || '').toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 async function sendEmail(transport, environment, readiness, submission) {
@@ -392,53 +215,6 @@ async function sendEmail(transport, environment, readiness, submission) {
   }
 }
 
-async function sendWhatsApp(fetchImplementation, environment, readiness, submission) {
-  if (!readiness.configured) return NOT_CONFIGURED;
-  try {
-    const isBooking = submission.type === 'booking';
-    const summary = isBooking
-      ? `${submission.data.service} · ${submission.data.preferredDate}`
-      : submission.data.enquiryType;
-    const response = await fetchImplementation(
-      `https://graph.facebook.com/${environment.WHATSAPP_GRAPH_VERSION || 'v23.0'}/${environment.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${environment.WHATSAPP_ACCESS_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(10000),
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to: environment.WHATSAPP_RECIPIENT.replace(/^\+/, ''),
-          type: 'template',
-          template: {
-            name: environment.WHATSAPP_TEMPLATE_NAME,
-            language: { code: environment.WHATSAPP_TEMPLATE_LANGUAGE || 'en_US' },
-            components: [{
-              type: 'body',
-              parameters: [
-                { type: 'text', text: isBooking ? 'booking request' : 'enquiry' },
-                { type: 'text', text: submission.data.fullName.slice(0, 120) },
-                { type: 'text', text: submission.data.phone.slice(0, 32) },
-                { type: 'text', text: submission.id },
-                { type: 'text', text: summary.slice(0, 200) },
-              ],
-            }],
-          },
-        }),
-      },
-    );
-    if (!response.ok) {
-      throw new Error(`WhatsApp provider returned HTTP ${response.status}.`);
-    }
-    return 'sent';
-  } catch (error) {
-    reportDeliveryFailure('whatsapp', submission.id, error);
-    return 'failed';
-  }
-}
-
 function reportDeliveryFailure(channel, reference, error) {
   console.error(JSON.stringify({
     level: 'error',
@@ -451,8 +227,7 @@ function reportDeliveryFailure(channel, reference, error) {
 
 module.exports = {
   createCustomerEmailSender,
-  createBookingApprovalNotifier,
-  createBookingMessageSender,
   createNotificationSender,
   getNotificationReadiness,
+  renderCustomerEmail,
 };

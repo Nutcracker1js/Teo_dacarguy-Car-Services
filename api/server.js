@@ -60,6 +60,7 @@ const app = createApp({
   paymentExpiryHours,
   bookingNotifications,
   publicSiteUrl: process.env.PUBLIC_SITE_URL || process.env.RENDER_EXTERNAL_URL || '',
+  notificationEmail: process.env.NOTIFICATION_EMAIL || '',
   adminUsername: process.env.ADMIN_USERNAME,
   adminPassword: process.env.ADMIN_PASSWORD,
   trustProxy: process.env.NODE_ENV === 'production' ? 1 : false,
