@@ -39,7 +39,7 @@ const REFUND_STATUSES = new Set(['NONE', 'INITIATED', 'COMPLETED']);
 const RESOLUTIONS = new Set(['RESCHEDULE', 'INITIATE_REFUND']);
 const SUBMISSION_TYPES = new Set(['all', 'booking', 'enquiry']);
 
-async function ensureApprovalCheckout(pool, paymentGateway, booking, paymentExpiryHours = 24) {
+async function ensureApprovalCheckout(pool, booking, publicSiteUrl) {
   if (booking.payment_status === 'PAID') {
     return { status: 'failed', error: 'Payment is already recorded; no payment link was sent.' };
   }
@@ -53,60 +53,30 @@ async function ensureApprovalCheckout(pool, paymentGateway, booking, paymentExpi
   if (!validEmail(booking.email)) {
     return { status: 'failed', error: 'Add a valid customer email to the booking before sending its payment link.' };
   }
-  if (booking.payment_status === 'AWAITING_PAYMENT'
-    && booking.payment_reference
-    && storedAmount === amountExpected
-    && isPaystackCheckoutUrl(booking.payment_checkout_url)) {
-    if (booking.payment_expires_at && new Date(booking.payment_expires_at) <= new Date()) {
-      return { status: 'failed', error: 'The payment period has ended. The transaction must be checked before a new payment link is created.' };
-    }
-    if (!booking.payment_expires_at) {
-      await pool.query(
-        `UPDATE bookings SET payment_expires_at = NOW() + ($1 * INTERVAL '1 hour')
-         WHERE id = $2 AND payment_reference = $3`,
-        [paymentExpiryHours, booking.id, booking.payment_reference],
-      );
-    }
+  const awaitingPayment = booking.payment_status === 'AWAITING_PAYMENT';
+  if (awaitingPayment && storedAmount !== amountExpected) {
+    return { status: 'failed', error: 'The booking price cannot be changed while a payment session is active. Check its payment status first.' };
+  }
+  if (awaitingPayment && isPaystackCheckoutUrl(booking.payment_checkout_url)) {
     return { status: 'ready', authorizationUrl: booking.payment_checkout_url };
   }
-  if (booking.payment_status === 'AWAITING_PAYMENT' && booking.payment_expires_at
-    && new Date(booking.payment_expires_at) <= new Date()) {
-    return { status: 'failed', error: 'The payment period has ended. The transaction must be checked before a new payment link is created.' };
+  if (awaitingPayment && !booking.payment_reference) {
+    return { status: 'failed', error: 'The current payment session needs to be checked before sending payment instructions.' };
   }
-  if (!paymentGateway.configured) {
-    return { status: 'not_configured', missing: ['PAYSTACK_SECRET_KEY'] };
+  const paymentPageUrl = createCustomerPaymentUrl(publicSiteUrl, booking.reference);
+  if (!paymentPageUrl) return { status: 'failed', error: 'Set a valid HTTPS PUBLIC_SITE_URL before sending payment instructions.' };
+  if (!awaitingPayment) {
+    const saved = await pool.query(
+      `UPDATE bookings SET amount_expected = $1
+       WHERE id = $2 AND status = 'APPROVED' AND payment_status <> 'PAID'
+       RETURNING id`,
+      [amountExpected, booking.id],
+    );
+    if (!saved.rowCount) {
+      return { status: 'failed', error: 'Booking changed while preparing payment instructions. Check the booking and try again.' };
+    }
   }
-  let checkout;
-  try {
-    checkout = await paymentGateway.initialize({ booking, email: booking.email.trim() });
-  } catch (error) {
-    console.error('Paystack approval checkout initialization failed:', error.message);
-    return { status: 'failed', error: `Could not create the Paystack payment link: ${error.message}` };
-  }
-  if (checkout.error) {
-    return {
-      status: checkout.error.status === 'not_configured' ? 'not_configured' : 'failed',
-      ...(checkout.error.status === 'not_configured'
-        ? { missing: ['PAYSTACK_SECRET_KEY'] }
-        : { error: checkout.error.message }),
-    };
-  }
-  if (!isPaystackCheckoutUrl(checkout.data?.authorizationUrl)
-    || typeof checkout.data.reference !== 'string' || !checkout.data.reference) {
-    return { status: 'failed', error: 'Paystack returned an invalid checkout link or transaction reference.' };
-  }
-  const saved = await pool.query(
-    `UPDATE bookings SET payment_status = 'AWAITING_PAYMENT', payment_reference = $1,
-      payment_checkout_url = $2, amount_expected = $3,
-      payment_expires_at = NOW() + ($4 * INTERVAL '1 hour')
-     WHERE id = $5 AND status = 'APPROVED' AND payment_status <> 'PAID'
-     RETURNING id`,
-    [checkout.data.reference, checkout.data.authorizationUrl, amountExpected, paymentExpiryHours, booking.id],
-  );
-  if (!saved.rowCount) {
-    return { status: 'failed', error: 'Booking changed while preparing checkout. Check the booking and try again.' };
-  }
-  return { status: 'ready', authorizationUrl: checkout.data.authorizationUrl };
+  return { status: 'ready', paymentPageUrl };
 }
 
 function isPaystackCheckoutUrl(value) {
@@ -115,6 +85,18 @@ function isPaystackCheckoutUrl(value) {
     return url.protocol === 'https:' && url.hostname === 'checkout.paystack.com' && url.pathname.length > 1;
   } catch {
     return false;
+  }
+}
+
+function createCustomerPaymentUrl(publicSiteUrl, reference) {
+  try {
+    const base = new URL(publicSiteUrl);
+    if (base.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(base.hostname)) return null;
+    const url = new URL('/payment.html', base);
+    url.searchParams.set('reference', reference);
+    return url.toString();
+  } catch {
+    return null;
   }
 }
 
@@ -146,7 +128,6 @@ function createAdminRouter({
   username,
   password,
   privateDirectory,
-  paymentGateway = { configured: false },
   bookingNotifications = null,
   paymentExpiryHours = 24,
   publicSiteUrl = '',
@@ -491,12 +472,7 @@ function createAdminRouter({
         response.status(result.httpStatus).json(result.body);
         return;
       }
-      result.body.paymentCheckout = await ensureApprovalCheckout(
-        pool,
-        paymentGateway,
-        bookingResult.rows[0],
-        paymentExpiryHours,
-      );
+      result.body.paymentCheckout = await ensureApprovalCheckout(pool, bookingResult.rows[0], publicSiteUrl);
       const eventType = result.body.paymentCheckout.status === 'ready'
         ? 'BOOKING_ACCEPTED'
         : 'BOOKING_QUOTE_REQUIRED';
@@ -507,8 +483,9 @@ function createAdminRouter({
         eventType,
         {
           checkoutUrl: result.body.paymentCheckout.authorizationUrl || null,
-          eventKey: `booking_accepted:${request.params.id}:${result.body.paymentCheckout.authorizationUrl || 'quote-required'}`,
-          paymentDeadline: result.body.paymentCheckout.status === 'ready'
+          paymentPageUrl: result.body.paymentCheckout.paymentPageUrl || null,
+          eventKey: `booking_accepted:${request.params.id}:${result.body.paymentCheckout.paymentPageUrl || result.body.paymentCheckout.authorizationUrl || 'quote-required'}`,
+          paymentDeadline: result.body.paymentCheckout.authorizationUrl && bookingResult.rows[0].payment_expires_at
             ? paymentDeadline(bookingResult.rows[0].payment_expires_at, paymentExpiryHours)
             : null,
         },
@@ -569,7 +546,7 @@ function createAdminRouter({
       response.status(409).json({ error: 'Approve this booking before preparing its payment link.' });
       return;
     }
-    const checkout = await ensureApprovalCheckout(pool, paymentGateway, booking, paymentExpiryHours);
+    const checkout = await ensureApprovalCheckout(pool, booking, publicSiteUrl);
     if (checkout.status !== 'ready') {
       const status = checkout.status === 'not_configured' ? 503 : 409;
       response.status(status).json({
@@ -584,12 +561,19 @@ function createAdminRouter({
       request.params.id,
       'BOOKING_ACCEPTED',
       {
-        checkoutUrl: checkout.authorizationUrl,
-        eventKey: `booking_accepted:${request.params.id}:${checkout.authorizationUrl}`,
-        paymentDeadline: paymentDeadline(booking.payment_expires_at, paymentExpiryHours),
+        checkoutUrl: checkout.authorizationUrl || null,
+        paymentPageUrl: checkout.paymentPageUrl || null,
+        eventKey: `booking_accepted:${request.params.id}:${checkout.paymentPageUrl || checkout.authorizationUrl}`,
+        paymentDeadline: checkout.authorizationUrl && booking.payment_expires_at
+          ? paymentDeadline(booking.payment_expires_at, paymentExpiryHours)
+          : null,
       },
     );
-    response.json({ authorizationUrl: checkout.authorizationUrl, customerEmail });
+    response.json({
+      ...(checkout.authorizationUrl ? { authorizationUrl: checkout.authorizationUrl } : {}),
+      ...(checkout.paymentPageUrl ? { paymentPageUrl: checkout.paymentPageUrl } : {}),
+      customerEmail,
+    });
   }));
 
   router.patch('/bookings/:id/payment', authenticate, asyncHandler(async (request, response) => {
@@ -1160,8 +1144,8 @@ async function updateBookingStatus(pool, bookingId, status, resolution, options 
         decline_reason = CASE WHEN $1::varchar = 'DECLINED' THEN NULLIF($4, '') ELSE NULL END,
         appointment_instructions = CASE
           WHEN $1::varchar = 'CONFIRMED' AND $5 <> '' THEN $5 ELSE appointment_instructions END,
-        slip_token_hash = CASE WHEN $6 IS NULL THEN slip_token_hash ELSE $6 END,
-        slip_token_expires_at = CASE WHEN $6 IS NULL THEN slip_token_expires_at
+        slip_token_hash = CASE WHEN $6::char(64) IS NULL THEN slip_token_hash ELSE $6::char(64) END,
+        slip_token_expires_at = CASE WHEN $6::char(64) IS NULL THEN slip_token_expires_at
           ELSE NOW() + INTERVAL '180 days' END,
         request_expires_at = CASE WHEN $1::varchar NOT IN ('NEW', 'PENDING_REVIEW') THEN NULL ELSE request_expires_at END,
         payment_expires_at = CASE WHEN $1::varchar IN ('DECLINED', 'CANCELLED', 'CONFIRMED') THEN NULL ELSE payment_expires_at END,
@@ -1169,7 +1153,7 @@ async function updateBookingStatus(pool, bookingId, status, resolution, options 
         proposed_preferred_time = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED' THEN $8::time ELSE NULL END,
         proposed_previous_status = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED'
           THEN COALESCE(proposed_previous_status, $9) ELSE NULL END,
-        proposed_response_token_hash = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED' THEN $10 ELSE NULL END,
+        proposed_response_token_hash = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED' THEN $10::char(64) ELSE NULL END,
         proposed_response_expires_at = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED'
           THEN NOW() + INTERVAL '48 hours' ELSE NULL END
        WHERE id = $11

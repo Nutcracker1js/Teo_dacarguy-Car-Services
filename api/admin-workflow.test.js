@@ -8,6 +8,7 @@ const username = 'workflow-admin';
 const password = 'workflow-test-password';
 const authorization = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
 const queryLog = [];
+const notificationPayloads = [];
 let currentBookingStatus = 'AWAITING_APPROVAL';
 let currentPaymentStatus = 'UNPAID';
 let currentService = {
@@ -48,6 +49,9 @@ const pool = {
       return { rowCount: values[0] === bookingId ? 1 : 0, rows: values[0] === bookingId ? [{ id: bookingId }] : [] };
     }
     if (sql.includes("UPDATE bookings SET payment_status = 'AWAITING_PAYMENT'")) {
+      return { rowCount: 1, rows: [{ id: bookingId }] };
+    }
+    if (sql.includes('UPDATE bookings SET amount_expected')) {
       return { rowCount: 1, rows: [{ id: bookingId }] };
     }
     if (sql.includes('UPDATE bookings SET payment_status')) {
@@ -143,22 +147,10 @@ before(async () => {
     username,
     password,
     privateDirectory: process.cwd(),
-    paymentGateway: {
-      configured: true,
-      async initialize({ booking, email }) {
-        assert.equal(booking.reference, 'TD-1001');
-        assert.equal(email, 'ada@example.test');
-        assert.equal(booking.amount_expected, 80000);
-        return {
-          data: {
-            authorizationUrl: 'https://checkout.paystack.com/approval-test',
-            reference: 'paystack-approval-test',
-          },
-        };
-      },
-    },
+    publicSiteUrl: 'https://teo.example.test',
     bookingNotifications: {
-      async enqueueAndDeliver() {
+      async enqueueAndDeliver(notification) {
+        notificationPayloads.push(notification);
         return { status: 'failed', error: 'SMTP connection failed.' };
       },
     },
@@ -207,12 +199,15 @@ test('approving a booking prepares payment without automatically sending a Whats
   assert.equal(result.status, 'APPROVED');
   assert.equal(currentBookingStatus, 'APPROVED');
   assert.equal(result.paymentCheckout.status, 'ready');
-  assert.equal(result.paymentCheckout.authorizationUrl, 'https://checkout.paystack.com/approval-test');
+  assert.equal(result.paymentCheckout.paymentPageUrl, 'https://teo.example.test/payment.html?reference=TD-1001');
   assert.equal(result.customerEmail.status, 'failed');
+  assert.equal(notificationPayloads.at(-1).payload.paymentPageUrl, result.paymentCheckout.paymentPageUrl);
   const statusUpdate = queryLog.find(({ sql }) => sql.includes('UPDATE bookings SET status = $1::varchar'));
   assert.ok(statusUpdate.sql.includes("$1::varchar NOT IN ('NEW', 'PENDING_REVIEW')"));
-  const checkoutUpdate = queryLog.find(({ sql }) => sql.includes("SET payment_status = 'AWAITING_PAYMENT'"));
-  assert.equal(checkoutUpdate.values[2], 80000);
+  assert.ok(statusUpdate.sql.includes('$6::char(64) IS NULL'));
+  assert.ok(statusUpdate.sql.includes('$10::char(64)'));
+  const amountUpdate = queryLog.find(({ sql }) => sql.includes('UPDATE bookings SET amount_expected'));
+  assert.equal(amountUpdate.values[0], 80000);
 
   const prepared = await request(`/bookings/${bookingId}/payment-link`, {
     method: 'POST',
@@ -220,7 +215,7 @@ test('approving a booking prepares payment without automatically sending a Whats
     body: JSON.stringify({}),
   });
   assert.equal(prepared.status, 200);
-  assert.equal((await prepared.json()).authorizationUrl, 'https://checkout.paystack.com/approval-test');
+  assert.equal((await prepared.json()).paymentPageUrl, 'https://teo.example.test/payment.html?reference=TD-1001');
 });
 
 test('re-approving an approved booking retries payment and email preparation', async () => {

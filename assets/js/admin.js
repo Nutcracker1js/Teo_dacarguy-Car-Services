@@ -737,8 +737,8 @@ function renderBookingDetails(result, feedback = null) {
       let feedback;
       if (updated.status === 'APPROVED') {
         feedback = updated.paymentCheckout?.status === 'ready'
-          ? `Booking approved and payment link prepared. Customer email: ${statusLabel(updated.customerEmail?.status || 'not configured')}.`
-          : `Booking approved. Payment link not ready: ${updated.paymentCheckout?.error || 'check payment settings'}. Customer email: ${statusLabel(updated.customerEmail?.status || 'not configured')}.`;
+          ? `Booking approved and payment page prepared. Customer email: ${statusLabel(updated.customerEmail?.status || 'not configured')}.`
+          : `Booking approved. Payment page not ready: ${updated.paymentCheckout?.error || 'check payment settings'}. Customer email: ${statusLabel(updated.customerEmail?.status || 'not configured')}.`;
       } else if (updated.customerEmail) {
         feedback = `Booking updated. Customer email: ${statusLabel(updated.customerEmail.status)}.`;
       } else {
@@ -757,10 +757,10 @@ function renderBookingDetails(result, feedback = null) {
   });
   actions.append(statusForm);
   if (booking.status === 'APPROVED' && booking.payment_status !== 'PAID') {
-    actions.append(button('Prepare payment link and email customer', 'admin-view-button', async () => {
+    actions.append(button('Prepare payment page and email customer', 'admin-view-button', async () => {
       try {
         const result = await sendJson(`/api/v1/admin/bookings/${booking.id}/payment-link`, 'POST', {});
-        showMessage(`Payment link is ready. Customer email: ${statusLabel(result.customerEmail?.status || 'not configured')}.`);
+        showMessage(`Payment page is ready. Customer email: ${statusLabel(result.customerEmail?.status || 'not configured')}.`);
         await openBooking(booking.id);
       } catch (error) {
         showMessage(error.message);

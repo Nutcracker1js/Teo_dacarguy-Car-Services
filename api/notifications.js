@@ -135,6 +135,7 @@ function renderCustomerEmail(notification) {
   const proposed = [notification.proposedDate, notification.proposedTime].filter(Boolean).join(' at ');
   if (proposed) rows.push(['Proposed appointment', proposed]);
   const lines = rows.map(([label, value]) => `${label}: ${value}`);
+  if (notification.paymentPageUrl) lines.push(`Open the secure payment page: ${notification.paymentPageUrl}`);
   if (notification.declineReason) lines.push(`Message from Teo: ${String(notification.declineReason).slice(0, 1000)}`);
   if (notification.instructions) lines.push(`Instructions: ${String(notification.instructions).slice(0, 2000)}`);
   if (notification.checkoutUrl) lines.push(`Secure Paystack checkout: ${notification.checkoutUrl}`);
@@ -152,6 +153,7 @@ function renderCustomerEmail(notification) {
   )).join('');
   const links = [
     notification.checkoutUrl && `<p><a href="${escaped(notification.checkoutUrl)}">Continue to secure Paystack checkout</a></p>`,
+    notification.paymentPageUrl && `<p><a href="${escaped(notification.paymentPageUrl)}">Open the secure payment page</a></p>`,
     notification.responseUrl && `<p><a href="${escaped(notification.responseUrl)}">Respond to the proposed appointment</a></p>`,
     notification.slipUrl && `<p><a href="${escaped(notification.slipUrl)}">Download your booking slip</a></p>`,
   ].filter(Boolean).join('');

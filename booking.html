@@ -17,6 +17,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="assets/css/styles.css" />
+    <script src="assets/js/booking-storage.js" defer></script>
     <script src="assets/js/script.js" defer></script>
   </head>
   <body class="consultation-body booking-page">
@@ -499,9 +500,42 @@
               Payment and booking approval are separate steps, so the
               appointment is not confirmed until Teo reviews it.
             </p>
+            <p class="booking-draft-save-status" id="booking-draft-save-status" role="status">Your unfinished booking is saved on this device as you fill in the form.</p>
           </form>
 
           <aside class="consultation-aside">
+            <section class="booking-return-panel" aria-labelledby="booking-return-heading">
+              <p class="section-kicker">ALREADY REQUESTED A SERVICE?</p>
+              <h2 id="booking-return-heading">Check booking status</h2>
+              <form id="booking-return-form" class="booking-status-form">
+                <label for="booking-return-reference">Booking reference</label>
+                <input id="booking-return-reference" name="reference" autocomplete="off" placeholder="TD-1042" required maxlength="24">
+                <label for="booking-return-phone">Phone number used for the request</label>
+                <input id="booking-return-phone" name="phone" type="tel" autocomplete="tel" placeholder="+234 801 234 5678" required maxlength="32">
+                <p id="booking-return-error" class="form-error" role="alert" hidden></p>
+                <button class="button button-bright" id="booking-return-submit" type="submit">Check status</button>
+              </form>
+              <section id="booking-return-result" class="booking-status-result" aria-live="polite" hidden>
+                <p id="booking-return-label" class="booking-status-label"></p>
+                <h3 id="booking-return-title"></h3>
+                <dl>
+                  <div><dt>Reference</dt><dd id="booking-return-result-reference"></dd></div>
+                  <div><dt>Service</dt><dd id="booking-return-service"></dd></div>
+                  <div><dt>Appointment</dt><dd id="booking-return-appointment"></dd></div>
+                  <div><dt>Payment</dt><dd id="booking-return-payment"></dd></div>
+                </dl>
+                <p id="booking-return-next-step" class="booking-status-next-step"></p>
+                <a class="button button-outline" id="booking-return-details-link" href="booking-status.html">Full booking details</a>
+              </section>
+              <details class="booking-storage-details">
+                <summary>Saved details &amp; privacy</summary>
+                <p class="booking-local-storage-note" id="booking-local-storage-note">
+                  Your unfinished form and recent booking reference are saved in this browser on this website address only. This is not encrypted; avoid shared devices.
+                </p>
+                <p id="booking-draft-notice" class="booking-draft-notice" role="status" hidden></p>
+                <button type="button" class="booking-clear-saved" id="booking-clear-saved">Clear saved details</button>
+              </details>
+            </section>
             <p class="section-kicker section-kicker-light">
               APPOINTMENT REQUEST
             </p>

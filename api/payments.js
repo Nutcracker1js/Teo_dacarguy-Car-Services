@@ -15,6 +15,9 @@ function verifyPaystackSignature(rawBody, signature, secretKey) {
 
 function createPaystackGateway(environment = process.env, fetchImplementation = fetch) {
   const secretKey = environment.PAYSTACK_SECRET_KEY || '';
+  const publicKey = environment.PAYSTACK_PUBLIC_KEY || '';
+  const secretMode = secretKey.match(/^sk_(test|live)_/)?.[1] || null;
+  const publicMode = publicKey.startsWith('pk_live_') ? 'live' : publicKey.startsWith('pk_test_') ? 'test' : null;
   const publicSiteUrl = environment.PUBLIC_SITE_URL || environment.RENDER_EXTERNAL_URL || '';
 
   async function requestPaystack(path, options = {}) {
@@ -44,6 +47,8 @@ function createPaystackGateway(environment = process.env, fetchImplementation = 
 
   return {
     configured: Boolean(secretKey),
+    publicKey,
+    publicKeyMatchesSecret: Boolean(secretMode && publicMode && secretMode === publicMode),
     async initialize({ booking, email }) {
       let callbackUrl;
       try {

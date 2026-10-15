@@ -22,6 +22,7 @@ let paymentVerification = {
 };
 const paymentInitializations = [];
 const paymentVerifications = [];
+const paymentIntentUpdates = [];
 const uploadRootPromise = fs.mkdtemp(path.join(os.tmpdir(), 'teo-api-test-'));
 const publicSiteRootPromise = fs.mkdtemp(path.join(os.tmpdir(), 'teo-public-site-test-'));
 let failAttachmentInsert = false;
@@ -129,6 +130,7 @@ const pool = {
       return { rowCount: 1, rows: [{ payment_status: 'PAID' }] };
     }
     if (sql.includes("SET payment_status = 'AWAITING_PAYMENT'")) {
+      paymentIntentUpdates.push({ sql, values });
       return { rowCount: 1, rows: [{ id: values[2] }] };
     }
     if (sql.includes('INSERT INTO reviews')) {
@@ -269,6 +271,8 @@ before(async () => {
     },
     paymentGateway: {
       configured: true,
+      publicKey: 'pk_test_publickey123',
+      publicKeyMatchesSecret: true,
       async initialize({ booking, email }) {
         paymentInitializations.push({ booking, email });
         return { data: { authorizationUrl: 'https://checkout.paystack.com/test', reference: 'paystack-test-01' } };
@@ -293,7 +297,9 @@ test('health endpoint confirms database availability', async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { status: 'ok' });
   const policy = response.headers.get('content-security-policy');
-  assert.match(policy, /frame-src 'self' https:\/\/maps\.google\.com https:\/\/www\.google\.com/);
+  assert.match(policy, /frame-src[^;]*https:\/\/checkout\.paystack\.com/);
+  assert.match(policy, /script-src[^;]*https:\/\/js\.paystack\.co/);
+  assert.match(policy, /connect-src[^;]*https:\/\/api\.paystack\.co/);
   assert.doesNotMatch(policy, /frame-src[^;]*\s\*(?:\s|;)/);
   assert.match(policy, /script-src[^;]*https:\/\/www\.smartsuppchat\.com/);
   assert.match(policy, /script-src[^;]*https:\/\/\*\.smartsuppcdn\.com/);
@@ -338,12 +344,23 @@ test('Paystack initialization requires an approved booking and uses the confirme
     body: JSON.stringify({
       reference: 'TD-TEST1001',
       phone: '08012345678',
+      amount: 1,
+      email: 'attacker@example.com',
     }),
   });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { authorizationUrl: 'https://checkout.paystack.com/test' });
-  assert.equal(paymentInitializations.at(-1).booking.amount_expected, '80000');
-  assert.equal(paymentInitializations.at(-1).email, 'customer@example.com');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  const result = await response.json();
+  assert.equal(result.publicKey, 'pk_test_publickey123');
+  assert.match(result.reference, /^TDPI-[A-F0-9-]{36}$/);
+  assert.equal(result.amount, 8000000);
+  assert.equal(result.currency, 'NGN');
+  assert.equal(result.email, 'customer@example.com');
+  assert.deepEqual(result.metadata, { booking_reference: 'TD-TEST1001' });
+  assert.equal(paymentInitializations.length, 0);
+  assert.equal(paymentIntentUpdates.at(-1).values[0], result.reference);
+  assert.equal(paymentIntentUpdates.at(-1).values[2], 'booking-test-id');
+  assert.match(paymentIntentUpdates.at(-1).sql, /payment_checkout_url = NULL/);
 });
 
 test('Paystack initialization reuses the approved booking checkout link', async () => {

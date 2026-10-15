@@ -51,6 +51,8 @@ function createApp({
       directives: {
         connectSrc: [
           "'self'",
+          'https://api.paystack.co',
+          'https://*.paystack.com',
           'https://*.smartsupp.com',
           'https://*.smartsuppchat.com',
           'https://*.smartsuppcdn.com',
@@ -67,6 +69,8 @@ function createApp({
         ],
         frameSrc: [
           "'self'",
+          'https://checkout.paystack.com',
+          'https://*.paystack.com',
           'https://maps.google.com',
           'https://www.google.com',
           'https://*.smartsupp.com',
@@ -75,6 +79,7 @@ function createApp({
         ],
         scriptSrc: [
           "'self'",
+          'https://js.paystack.co',
           'https://www.smartsuppchat.com',
           'https://*.smartsuppcdn.com',
         ],
@@ -415,7 +420,7 @@ function createApp({
       return;
     }
     const booking = lookup.rows[0];
-    if (booking.status !== 'APPROVED') {
+    if (!['APPROVED', 'CONFIRMED'].includes(booking.status)) {
       response.status(409).json({ error: 'Payment is available only after Teo approves your booking.' });
       return;
     }
@@ -444,35 +449,57 @@ function createApp({
         response.json({ authorizationUrl: booking.payment_checkout_url });
         return;
       }
-      response.status(409).json({ error: 'The current payment session needs to be checked before another checkout can be created.' });
-      return;
     }
     if (!paymentGateway.configured) {
       response.status(503).json({ error: 'Online payment is not configured yet. Contact Teo to arrange payment.' });
+      return;
+    }
+    if (!/^pk_(test|live)_[A-Za-z0-9]+$/.test(paymentGateway.publicKey || '')
+      || paymentGateway.publicKeyMatchesSecret !== true) {
+      response.status(503).json({ error: 'Paystack Inline is not fully configured. Contact Teo to arrange payment.' });
       return;
     }
     if (!validEmail(booking.email)) {
       response.status(409).json({ error: 'The booking needs a valid receipt email. Contact Teo to update your details.' });
       return;
     }
-    const checkout = await paymentGateway.initialize({ booking, email: booking.email.trim() });
-    if (checkout.error) {
-      response.status(checkout.error.status === 'not_configured' ? 503 : 502).json({ error: checkout.error.message });
+    const amountKobo = Math.round(Number(booking.amount_expected) * 100);
+    if (!Number.isSafeInteger(amountKobo) || amountKobo < 100) {
+      response.status(409).json({ error: 'The booking has no valid payment amount. Contact Teo to confirm the price.' });
       return;
     }
-    const savedReference = await pool.query(
-      `UPDATE bookings SET payment_status = 'AWAITING_PAYMENT', payment_reference = $1,
-        payment_checkout_url = $2, payment_expires_at = NOW() + ($3 * INTERVAL '1 hour')
-       WHERE id = $4 AND status = 'APPROVED' AND payment_status <> 'PAID'
-       RETURNING id`,
-      [checkout.data.reference, checkout.data.authorizationUrl, paymentExpiryHours, booking.id],
-    );
-    if (!savedReference.rowCount) {
-      response.status(409).json({ error: 'The booking changed while starting checkout. Check its status and try again.' });
-      return;
+    let transactionReference = booking.payment_reference;
+    if (booking.payment_status === 'AWAITING_PAYMENT') {
+      if (!/^TDPI-[A-F0-9-]{36}$/.test(transactionReference || '')) {
+        response.status(409).json({ error: 'The current payment session needs to be checked before another checkout can be created.' });
+        return;
+      }
+    } else {
+      transactionReference = `TDPI-${crypto.randomUUID().toUpperCase()}`;
+    }
+    if (booking.payment_status !== 'AWAITING_PAYMENT') {
+      const savedReference = await pool.query(
+        `UPDATE bookings SET payment_status = 'AWAITING_PAYMENT', payment_reference = $1,
+          payment_checkout_url = NULL, payment_expires_at = NOW() + ($2 * INTERVAL '1 hour')
+         WHERE id = $3 AND status IN ('APPROVED', 'CONFIRMED')
+           AND payment_status IN ('UNPAID', 'FAILED', 'EXPIRED')
+         RETURNING id`,
+        [transactionReference, paymentExpiryHours, booking.id],
+      );
+      if (!savedReference.rowCount) {
+        response.status(409).json({ error: 'The booking changed while starting checkout. Check its status and try again.' });
+        return;
+      }
     }
     response.set('Cache-Control', 'no-store');
-    response.json({ authorizationUrl: checkout.data.authorizationUrl });
+    response.json({
+      publicKey: paymentGateway.publicKey,
+      reference: transactionReference,
+      amount: amountKobo,
+      currency: 'NGN',
+      email: booking.email.trim(),
+      metadata: { booking_reference: booking.reference },
+    });
   }));
 
   app.post('/api/v1/payments/verify', publicPaymentLimit, asyncHandler(async (request, response) => {
@@ -505,7 +532,7 @@ function createApp({
       response.json({ paymentStatus: 'PAID' });
       return;
     }
-    if (!['APPROVED', 'AWAITING_PAYMENT'].includes(booking.status)) {
+    if (!['APPROVED', 'CONFIRMED', 'AWAITING_PAYMENT'].includes(booking.status)) {
       response.status(409).json({ error: 'The booking must be approved before payment can be verified.' });
       return;
     }
@@ -633,7 +660,6 @@ function createApp({
     username: adminUsername,
     password: adminPassword,
     privateDirectory: uploads.privateDirectory,
-    paymentGateway,
     bookingNotifications,
     publicSiteUrl,
     paymentExpiryHours,

@@ -23,6 +23,15 @@ if (statusForm) {
   const transactionReference = query.get('trxref')
     || (query.get('reference') && !query.get('reference').startsWith('TD-') ? query.get('reference') : '');
   if (requestedReference) referenceInput.value = requestedReference;
+  const savedBooking = requestedReference
+    ? window.bookingBrowserStorage?.getBooking(requestedReference)
+    : window.bookingBrowserStorage?.getLatestBooking();
+  if (!requestedReference && savedBooking) referenceInput.value = savedBooking.reference;
+  if (savedBooking) statusForm.elements.namedItem('phone').value = savedBooking.phone;
+  if (savedBooking) {
+    document.querySelector('#booking-status-intro').textContent =
+      'Your latest booking details were restored from this browser. Refresh the status below to see the latest update.';
+  }
   if (transactionReference) {
     document.querySelector('#booking-status-intro').textContent =
       'Payment returned from Paystack. Check your booking to verify the payment and view its status.';
@@ -164,6 +173,10 @@ if (statusForm) {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Could not check this booking.');
       const booking = result.booking;
+      window.bookingBrowserStorage?.rememberBooking(
+        booking.reference,
+        statusForm.elements.namedItem('phone').value,
+      );
       if (transactionReference) {
         const verificationResponse = await fetch(`${apiBaseUrl}/api/v1/payments/verify`, {
           method: 'POST',
@@ -198,32 +211,10 @@ if (statusForm) {
 
   paymentForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    paymentError.hidden = true;
-    paymentButton.disabled = true;
-    paymentButton.textContent = 'Connecting to Paystack…';
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/v1/payments/initialize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reference: referenceInput.value,
-          phone: new FormData(statusForm).get('phone'),
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Could not start Paystack checkout.');
-      if (typeof result.authorizationUrl !== 'string'
-        || new URL(result.authorizationUrl).origin !== 'https://checkout.paystack.com') {
-        throw new Error('Paystack returned an invalid checkout link.');
-      }
-      window.location.assign(result.authorizationUrl);
-    } catch (error) {
-      paymentError.textContent = error instanceof TypeError
-        ? 'Could not reach secure checkout. Please try again or contact Teo.'
-        : error.message;
-      paymentError.hidden = false;
-      paymentButton.disabled = false;
-      paymentButton.textContent = 'Pay with Paystack';
-    }
+    const paymentUrl = new URL('payment.html', window.location.href);
+    paymentUrl.searchParams.set('reference', referenceInput.value.trim());
+    window.location.assign(paymentUrl.toString());
   });
+
+  if (savedBooking) statusForm.requestSubmit();
 }

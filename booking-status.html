@@ -11,6 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/styles.css">
+    <script src="assets/js/booking-storage.js" defer></script>
     <script src="assets/js/booking-status.js" defer></script>
   </head>
   <body class="consultation-body booking-status-page">
@@ -32,6 +33,7 @@
         <p class="section-kicker">BOOKING UPDATE</p>
         <h1 id="booking-status-title">Check your booking.</h1>
         <p id="booking-status-intro" class="booking-status-intro">Enter the booking reference and the phone number used when you made the request.</p>
+        <p class="booking-local-storage-note">If this is your browser and this is the same website address you used before, the latest booking reference and phone number can be remembered here. Saved details stay on this device and website address only; clear them from the booking page.</p>
         <form id="booking-status-form" class="booking-status-form">
           <label for="status-reference">Booking reference</label>
           <input id="status-reference" name="reference" autocomplete="off" placeholder="TD-1042" required maxlength="24">
@@ -58,7 +60,7 @@
           </section>
           <form id="booking-payment-form" class="booking-payment-form" hidden>
             <p id="booking-payment-error" class="form-error" role="alert" hidden></p>
-            <button class="button button-bright" type="submit">Pay with Paystack</button>
+            <button class="button button-bright" type="submit">Continue to secure payment</button>
             <small>Your receipt goes to the email on your booking. Secure checkout is provided by Paystack. Your appointment is confirmed only after payment verification and official approval.</small>
           </form>
         </section>

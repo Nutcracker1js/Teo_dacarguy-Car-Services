@@ -11,6 +11,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/styles.css">
+    <script src="https://js.paystack.co/v1/inline.js" defer></script>
+    <script src="assets/js/booking-storage.js" defer></script>
     <script src="assets/js/payment.js" defer></script>
   </head>
   <body class="consultation-body booking-status-page">
@@ -31,6 +33,7 @@
         <p class="section-kicker">SECURE CHECKOUT</p>
         <h1 id="payment-title">Pay for your booking.</h1>
         <p class="booking-status-intro">Enter the booking reference and phone number used for your request. Payment is available only after Teo approves your booking.</p>
+        <p class="booking-local-storage-note">This browser can remember your latest booking reference and phone number on this device and website address only. Avoid saving on a shared device; clear saved details from the booking page.</p>
         <form id="payment-lookup-form" class="booking-status-form">
           <label for="payment-reference">Booking reference</label>
           <input id="payment-reference" name="reference" autocomplete="off" placeholder="TD-1042" required maxlength="24">

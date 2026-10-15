@@ -2256,6 +2256,114 @@ main.consultation-page {
 .booking-page .consultation-heading > p:first-of-type {
   text-align: center;
 }
+.booking-return-panel {
+  margin: 0 0 22px;
+  padding: 16px;
+  background: #fff;
+}
+.booking-return-panel h2 {
+  margin: 7px 0 12px;
+  color: var(--ink);
+  font: 600 clamp(23px, 2.2vw, 29px)/0.98 var(--display);
+  text-transform: uppercase;
+}
+.booking-return-panel .section-kicker {
+  margin: 0;
+  font-size: 9px;
+}
+.booking-return-panel .booking-status-form {
+  max-width: none;
+  margin-top: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+}
+.booking-return-panel .booking-status-form input,
+.booking-return-panel .booking-status-form select {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font: 11px var(--body);
+}
+.booking-return-panel .booking-status-form label {
+  color: var(--ink);
+  font-size: 10px;
+}
+.booking-return-panel .booking-status-form .button {
+  justify-self: stretch;
+  min-height: 39px;
+  margin-top: 5px;
+  padding: 9px 12px;
+  font-size: 10px;
+}
+.booking-return-panel .booking-status-result h3 {
+  margin: 8px 0 12px;
+  color: var(--ink);
+  font: 600 23px/1 var(--display);
+  text-transform: uppercase;
+}
+.booking-return-panel .booking-status-result .button {
+  display: inline-flex;
+  min-height: 36px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  color: var(--ink);
+  font-size: 9px;
+  text-decoration: none;
+}
+.booking-return-panel .booking-status-result {
+  margin-top: 14px;
+  padding: 14px;
+}
+.booking-return-panel .booking-status-result dl div {
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 7px;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+}
+.booking-storage-details {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.6;
+}
+.booking-storage-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.booking-local-storage-note,
+.booking-draft-notice,
+.booking-draft-save-status {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+.booking-local-storage-note {
+  max-width: 100%;
+  margin: 8px 0;
+  font-size: 9px;
+}
+.booking-draft-notice {
+  margin: 8px 0;
+  color: #563e0b;
+  font-weight: 700;
+}
+.booking-clear-saved {
+  min-height: 30px;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: var(--red);
+  font-size: 9px;
+  font-weight: 700;
+  text-decoration: underline;
+}
+.booking-draft-save-status {
+  margin: 0;
+}
 .consultation-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
@@ -2646,7 +2754,8 @@ main.consultation-page {
   font-size: 12px;
   font-weight: 700;
 }
-.booking-status-form input {
+.booking-status-form input,
+.booking-status-form select {
   min-height: 48px;
   padding: 12px;
   border: 1px solid var(--line);

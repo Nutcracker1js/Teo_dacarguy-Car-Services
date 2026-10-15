@@ -55,6 +55,25 @@ test('Paystack verification URL-encodes the transaction reference', async () => 
   assert.equal(requestedUrl, 'https://api.paystack.co/transaction/verify/transaction%3Dref');
 });
 
+test('Paystack gateway exposes only a mode-matched public key for Inline checkout', () => {
+  const matching = createPaystackGateway({
+    PAYSTACK_SECRET_KEY: 'sk_test_private',
+    PAYSTACK_PUBLIC_KEY: 'pk_test_public',
+  });
+  assert.equal(matching.publicKey, 'pk_test_public');
+  assert.equal(matching.publicKeyMatchesSecret, true);
+
+  const mismatched = createPaystackGateway({
+    PAYSTACK_SECRET_KEY: 'sk_test_private',
+    PAYSTACK_PUBLIC_KEY: 'pk_live_public',
+  });
+  assert.equal(mismatched.publicKeyMatchesSecret, false);
+
+  const missing = createPaystackGateway({ PAYSTACK_SECRET_KEY: 'sk_test_private' });
+  assert.equal(missing.publicKey, '');
+  assert.equal(missing.publicKeyMatchesSecret, false);
+});
+
 test('Render external URL supplies the Paystack callback when no public URL is configured', async () => {
   let requestBody;
   const gateway = createPaystackGateway({
