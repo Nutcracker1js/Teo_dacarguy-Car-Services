@@ -15,7 +15,7 @@ function verifyPaystackSignature(rawBody, signature, secretKey) {
 
 function createPaystackGateway(environment = process.env, fetchImplementation = fetch) {
   const secretKey = environment.PAYSTACK_SECRET_KEY || '';
-  const publicSiteUrl = environment.PUBLIC_SITE_URL || '';
+  const publicSiteUrl = environment.PUBLIC_SITE_URL || environment.RENDER_EXTERNAL_URL || '';
 
   async function requestPaystack(path, options = {}) {
     if (!secretKey) {

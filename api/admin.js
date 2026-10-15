@@ -1154,23 +1154,23 @@ async function updateBookingStatus(pool, bookingId, status, resolution, options 
       }, { excludeBookingId: bookingId });
     }
     const updated = await client.query(
-      `UPDATE bookings SET status = $1, resolution = $2,
-        payment_status = CASE WHEN $3 = 'INITIATE_REFUND' THEN 'REFUND_PENDING' ELSE payment_status END,
-        refund_status = CASE WHEN $3 = 'INITIATE_REFUND' THEN 'INITIATED' ELSE refund_status END,
-        decline_reason = CASE WHEN $1 = 'DECLINED' THEN NULLIF($4, '') ELSE NULL END,
+      `UPDATE bookings SET status = $1::varchar, resolution = $2,
+        payment_status = CASE WHEN $3::varchar = 'INITIATE_REFUND' THEN 'REFUND_PENDING' ELSE payment_status END,
+        refund_status = CASE WHEN $3::varchar = 'INITIATE_REFUND' THEN 'INITIATED' ELSE refund_status END,
+        decline_reason = CASE WHEN $1::varchar = 'DECLINED' THEN NULLIF($4, '') ELSE NULL END,
         appointment_instructions = CASE
-          WHEN $1 = 'CONFIRMED' AND $5 <> '' THEN $5 ELSE appointment_instructions END,
+          WHEN $1::varchar = 'CONFIRMED' AND $5 <> '' THEN $5 ELSE appointment_instructions END,
         slip_token_hash = CASE WHEN $6 IS NULL THEN slip_token_hash ELSE $6 END,
         slip_token_expires_at = CASE WHEN $6 IS NULL THEN slip_token_expires_at
           ELSE NOW() + INTERVAL '180 days' END,
-        request_expires_at = CASE WHEN $1 NOT IN ('NEW', 'PENDING_REVIEW') THEN NULL ELSE request_expires_at END,
-        payment_expires_at = CASE WHEN $1 IN ('DECLINED', 'CANCELLED', 'CONFIRMED') THEN NULL ELSE payment_expires_at END,
-        proposed_preferred_date = CASE WHEN $1 = 'RESCHEDULE_PROPOSED' THEN $7::date ELSE NULL END,
-        proposed_preferred_time = CASE WHEN $1 = 'RESCHEDULE_PROPOSED' THEN $8::time ELSE NULL END,
-        proposed_previous_status = CASE WHEN $1 = 'RESCHEDULE_PROPOSED'
+        request_expires_at = CASE WHEN $1::varchar NOT IN ('NEW', 'PENDING_REVIEW') THEN NULL ELSE request_expires_at END,
+        payment_expires_at = CASE WHEN $1::varchar IN ('DECLINED', 'CANCELLED', 'CONFIRMED') THEN NULL ELSE payment_expires_at END,
+        proposed_preferred_date = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED' THEN $7::date ELSE NULL END,
+        proposed_preferred_time = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED' THEN $8::time ELSE NULL END,
+        proposed_previous_status = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED'
           THEN COALESCE(proposed_previous_status, $9) ELSE NULL END,
-        proposed_response_token_hash = CASE WHEN $1 = 'RESCHEDULE_PROPOSED' THEN $10 ELSE NULL END,
-        proposed_response_expires_at = CASE WHEN $1 = 'RESCHEDULE_PROPOSED'
+        proposed_response_token_hash = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED' THEN $10 ELSE NULL END,
+        proposed_response_expires_at = CASE WHEN $1::varchar = 'RESCHEDULE_PROPOSED'
           THEN NOW() + INTERVAL '48 hours' ELSE NULL END
        WHERE id = $11
        RETURNING id, reference, status, resolution, payment_status, refund_status`,

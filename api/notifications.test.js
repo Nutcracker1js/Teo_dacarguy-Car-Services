@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const {
   createBookingApprovalNotifier,
   createBookingMessageSender,
+  createCustomerEmailSender,
   createNotificationSender,
   getNotificationReadiness,
 } = require('./notifications');
@@ -216,6 +217,39 @@ test('email notifications default to the standard submission port', () => {
   });
   assert.equal(getNotificationReadiness(environment).email.configured, true);
   assert.equal(transportOptions.port, 587);
+  assert.equal(transportOptions.localAddress, '0.0.0.0');
+});
+
+test('customer email transport uses IPv4 for the SMTP connection', async () => {
+  let transportOptions;
+  let sentMessage;
+  const sendEmail = createCustomerEmailSender({
+    SMTP_HOST: 'smtp.example.test',
+    SMTP_PORT: '465',
+    SMTP_SECURE: 'true',
+    SMTP_USER: 'api@example.test',
+    SMTP_PASSWORD: 'test-password',
+  }, (options) => {
+    transportOptions = options;
+    return {
+      async sendMail(message) {
+        sentMessage = message;
+      },
+    };
+  });
+
+  await sendEmail({
+    to: 'customer@example.test',
+    eventType: 'BOOKING_RECEIVED',
+    customerName: 'Ada Customer',
+    reference: 'TD-1001',
+    service: 'MAINTENANCE',
+  });
+
+  assert.equal(transportOptions.port, 465);
+  assert.equal(transportOptions.secure, true);
+  assert.equal(transportOptions.localAddress, '0.0.0.0');
+  assert.equal(sentMessage.to, 'customer@example.test');
 });
 
 test('failed notification provider does not claim delivery', async () => {

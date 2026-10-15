@@ -59,7 +59,7 @@ const app = createApp({
   bookingReviewTtlHours,
   paymentExpiryHours,
   bookingNotifications,
-  publicSiteUrl: process.env.PUBLIC_SITE_URL || '',
+  publicSiteUrl: process.env.PUBLIC_SITE_URL || process.env.RENDER_EXTERNAL_URL || '',
   adminUsername: process.env.ADMIN_USERNAME,
   adminPassword: process.env.ADMIN_PASSWORD,
   trustProxy: process.env.NODE_ENV === 'production' ? 1 : false,

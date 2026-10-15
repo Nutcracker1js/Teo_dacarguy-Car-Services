@@ -55,6 +55,38 @@ test('Paystack verification URL-encodes the transaction reference', async () => 
   assert.equal(requestedUrl, 'https://api.paystack.co/transaction/verify/transaction%3Dref');
 });
 
+test('Render external URL supplies the Paystack callback when no public URL is configured', async () => {
+  let requestBody;
+  const gateway = createPaystackGateway({
+    PAYSTACK_SECRET_KEY: 'sk_test_private',
+    RENDER_EXTERNAL_URL: 'https://teo-dacarguy-car-services.onrender.com',
+  }, async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      async json() {
+        return {
+          status: true,
+          data: {
+            authorization_url: 'https://checkout.paystack.com/test',
+            reference: 'paystack-ref-1',
+          },
+        };
+      },
+    };
+  });
+
+  await gateway.initialize({
+    booking: { reference: 'TD-1042', amount_expected: '80000.00' },
+    email: 'customer@example.com',
+  });
+
+  assert.equal(
+    requestBody.callback_url,
+    'https://teo-dacarguy-car-services.onrender.com/booking-status.html?bookingReference=TD-1042',
+  );
+});
+
 test('checkout refuses insecure public URLs and invalid amounts', async () => {
   const insecure = createPaystackGateway({
     PAYSTACK_SECRET_KEY: 'sk_test_private',

@@ -104,6 +104,23 @@
   line-height: 1.55;
 }
 
+.booking-action-feedback {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid #27834a;
+  border-radius: 4px;
+  background: #edf8f0;
+  color: #1b5d32;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.booking-action-feedback.is-error {
+  border-left-color: var(--red);
+  background: #fff0ef;
+  color: #711d1a;
+}
+
 .admin-login,
 .admin-inbox {
   border: 1px solid #e2e4e7;

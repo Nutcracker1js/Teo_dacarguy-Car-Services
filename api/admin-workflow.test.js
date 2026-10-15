@@ -205,9 +205,12 @@ test('approving a booking prepares payment without automatically sending a Whats
   assert.equal(response.status, 200);
   const result = await response.json();
   assert.equal(result.status, 'APPROVED');
+  assert.equal(currentBookingStatus, 'APPROVED');
   assert.equal(result.paymentCheckout.status, 'ready');
   assert.equal(result.paymentCheckout.authorizationUrl, 'https://checkout.paystack.com/approval-test');
   assert.equal(result.customerEmail.status, 'failed');
+  const statusUpdate = queryLog.find(({ sql }) => sql.includes('UPDATE bookings SET status = $1::varchar'));
+  assert.ok(statusUpdate.sql.includes("$1::varchar NOT IN ('NEW', 'PENDING_REVIEW')"));
   const checkoutUpdate = queryLog.find(({ sql }) => sql.includes("SET payment_status = 'AWAITING_PAYMENT'"));
   assert.equal(checkoutUpdate.values[2], 80000);
 

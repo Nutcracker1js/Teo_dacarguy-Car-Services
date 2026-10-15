@@ -347,10 +347,10 @@ function inputField(form, labelText, type, name, value = '', options = {}) {
   return input;
 }
 
-async function openBooking(id) {
+async function openBooking(id, feedback = null) {
   try {
     const result = await getJson(`/api/v1/admin/bookings/${id}`, 'Could not load this booking.');
-    renderBookingDetails(result);
+    renderBookingDetails(result, feedback);
     const dialog = document.querySelector('#booking-dialog');
     if (!dialog.open) dialog.showModal();
   } catch (error) {
@@ -358,7 +358,7 @@ async function openBooking(id) {
   }
 }
 
-function renderBookingDetails(result) {
+function renderBookingDetails(result, feedback = null) {
   const booking = result.booking;
   const root = document.querySelector('#booking-dialog-content');
   root.replaceChildren();
@@ -367,6 +367,13 @@ function renderBookingDetails(result) {
   addText(intro, 'p', reference(booking));
   intro.append(makeBadge(booking.status, 'booking-status'), makeBadge(booking.payment_status, 'payment-status'));
   root.append(intro);
+  if (feedback) {
+    const notice = document.createElement('p');
+    notice.className = 'booking-action-feedback';
+    notice.setAttribute('role', feedback.error ? 'alert' : 'status');
+    notice.textContent = feedback.message;
+    root.append(notice);
+  }
   const customerSection = renderDetailSection(root, 'Customer information', [
     ['Customer', booking.full_name],
     ['Phone', booking.phone],
@@ -702,12 +709,21 @@ function renderBookingDetails(result) {
   const updateStatus = document.createElement('button');
   updateStatus.className = 'button button-bright';
   updateStatus.textContent = 'Update booking status';
+  const statusFeedback = document.createElement('p');
+  statusFeedback.className = 'booking-action-feedback';
+  statusFeedback.setAttribute('role', 'status');
+  statusFeedback.setAttribute('aria-live', 'polite');
+  statusFeedback.hidden = true;
+  statusForm.append(statusFeedback);
   statusForm.append(updateStatus);
   statusForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     updateStatus.disabled = true;
     updateStatus.textContent = 'Updating booking...';
-    showMessage('Saving the booking update and preparing payment/email. This may take a few seconds.');
+    statusFeedback.hidden = false;
+    statusFeedback.classList.remove('is-error');
+    statusFeedback.textContent = 'Saving the booking update and preparing payment/email. This may take a few seconds.';
+    showMessage('');
     try {
       const updated = await sendJson(`/api/v1/admin/bookings/${booking.id}/status`, 'PATCH', {
         status: nextStatus.value,
@@ -718,17 +734,22 @@ function renderBookingDetails(result) {
           ? { proposedDate: proposedDate.value, proposedTime: proposedTime.value }
           : {}),
       }, 'Could not update booking status.');
+      let feedback;
       if (updated.status === 'APPROVED') {
-        showMessage(updated.paymentCheckout?.status === 'ready'
+        feedback = updated.paymentCheckout?.status === 'ready'
           ? `Booking approved and payment link prepared. Customer email: ${statusLabel(updated.customerEmail?.status || 'not configured')}.`
-          : `Booking approved. Payment link not ready: ${updated.paymentCheckout?.error || 'check payment settings'}. Customer email: ${statusLabel(updated.customerEmail?.status || 'not configured')}.`);
+          : `Booking approved. Payment link not ready: ${updated.paymentCheckout?.error || 'check payment settings'}. Customer email: ${statusLabel(updated.customerEmail?.status || 'not configured')}.`;
       } else if (updated.customerEmail) {
-        showMessage(`Booking updated. Customer email: ${statusLabel(updated.customerEmail.status)}.`);
+        feedback = `Booking updated. Customer email: ${statusLabel(updated.customerEmail.status)}.`;
+      } else {
+        feedback = `Booking status updated to ${statusLabel(updated.status)}.`;
       }
-      await openBooking(booking.id);
+      await openBooking(booking.id, { message: feedback });
       await refreshCurrentPanel();
     } catch (error) {
-      showMessage(error.message);
+      statusFeedback.classList.add('is-error');
+      statusFeedback.setAttribute('role', 'alert');
+      statusFeedback.textContent = error.message;
     } finally {
       updateStatus.disabled = false;
       updateStatus.textContent = 'Update booking status';

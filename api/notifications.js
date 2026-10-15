@@ -41,6 +41,7 @@ function createNotificationSender(
       port: Number(environment.SMTP_PORT || 587),
       secure: environment.SMTP_SECURE === 'true',
       requireTLS: environment.SMTP_SECURE !== 'true',
+      localAddress: '0.0.0.0',
       auth: {
         user: environment.SMTP_USER,
         pass: environment.SMTP_PASSWORD,
@@ -74,6 +75,7 @@ function createCustomerEmailSender(environment = process.env, transportFactory =
     port: smtpPort,
     secure: environment.SMTP_SECURE === 'true',
     requireTLS: environment.SMTP_SECURE !== 'true',
+    localAddress: '0.0.0.0',
     auth: { user: environment.SMTP_USER, pass: environment.SMTP_PASSWORD },
     connectionTimeout: 10000,
     greetingTimeout: 10000,
