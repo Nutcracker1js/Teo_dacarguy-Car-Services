@@ -53,14 +53,35 @@ function createCustomerNotificationService({ pool, sendEmail }) {
     const claim = await pool.query(
       `UPDATE booking_notifications
        SET delivery_status = 'SENDING', attempts = attempts + 1,
-         claimed_at = NOW(), last_error = NULL
+         claimed_at = NOW(), first_attempt_at = COALESCE(first_attempt_at, NOW()),
+         last_error = NULL
        WHERE id = $1
+         AND (first_attempt_at IS NULL OR first_attempt_at > NOW() - INTERVAL '23 hours')
          AND (delivery_status IN ('PENDING', 'FAILED')
            OR (delivery_status = 'SENDING' AND claimed_at < NOW() - INTERVAL '10 minutes'))
-       RETURNING id, event_type, recipient, payload`,
+       RETURNING id, event_type, recipient, payload, attempts`,
       [notificationId],
     );
-    if (!claim.rowCount) return { status: 'already_sent_or_in_progress' };
+    if (!claim.rowCount) {
+      const expiredRetry = await pool.query(
+        `SELECT id FROM booking_notifications
+         WHERE id = $1 AND first_attempt_at <= NOW() - INTERVAL '23 hours'
+           AND delivery_status IN ('FAILED', 'SENDING')`,
+        [notificationId],
+      );
+      if (expiredRetry.rowCount) {
+        console.warn(JSON.stringify({
+          level: 'warn',
+          message: 'Customer email retry skipped to avoid a duplicate after the provider idempotency window.',
+          notificationId,
+        }));
+        return {
+          status: 'retry_window_expired',
+          error: 'Retry window expired; check Resend delivery history before sending this email again.',
+        };
+      }
+      return { status: 'already_sent_or_in_progress' };
+    }
     const notification = claim.rows[0];
     if (!validEmail(notification.recipient)) {
       await markFailed(notification.id, 'Customer email is missing or invalid.');
@@ -68,13 +89,15 @@ function createCustomerNotificationService({ pool, sendEmail }) {
     }
     try {
       await sendEmail({
+        ...notification.payload,
+        id: notification.id,
         to: notification.recipient,
         eventType: notification.event_type,
-        ...notification.payload,
       });
       await pool.query(
         `UPDATE booking_notifications
-         SET delivery_status = 'SENT', sent_at = NOW(), claimed_at = NULL
+         SET delivery_status = 'SENT', sent_at = NOW(), claimed_at = NULL,
+           next_attempt_at = NULL
          WHERE id = $1 AND delivery_status = 'SENDING'`,
         [notification.id],
       );
@@ -87,6 +110,9 @@ function createCustomerNotificationService({ pool, sendEmail }) {
         message: 'Customer email delivery failed.',
         notificationId: notification.id,
         eventType: notification.event_type,
+        attempts: notification.attempts,
+        providerStatus: error.statusCode || null,
+        providerRequestId: error.requestId || null,
         error: message,
       }));
       return { status: 'failed', error: 'Email could not be delivered. An administrator can retry it.' };
@@ -96,7 +122,11 @@ function createCustomerNotificationService({ pool, sendEmail }) {
   async function markFailed(notificationId, message) {
     await pool.query(
       `UPDATE booking_notifications
-       SET delivery_status = 'FAILED', last_error = $2, claimed_at = NULL
+       SET delivery_status = 'FAILED', last_error = $2, claimed_at = NULL,
+         next_attempt_at = CASE
+           WHEN attempts < 5 THEN NOW() + (LEAST(60, POWER(2, attempts)) * INTERVAL '1 minute')
+           ELSE NULL
+         END
        WHERE id = $1 AND delivery_status = 'SENDING'`,
       [notificationId, message.slice(0, 1000)],
     );
@@ -106,6 +136,7 @@ function createCustomerNotificationService({ pool, sendEmail }) {
     const pending = await pool.query(
       `SELECT id FROM booking_notifications
        WHERE delivery_status = 'PENDING'
+          OR (delivery_status = 'FAILED' AND next_attempt_at <= NOW())
           OR (delivery_status = 'SENDING' AND claimed_at < NOW() - INTERVAL '10 minutes')
        ORDER BY queued_at
        LIMIT $1`,

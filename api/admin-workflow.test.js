@@ -150,7 +150,7 @@ before(async () => {
     bookingNotifications: {
       async enqueueAndDeliver(notification) {
         notificationPayloads.push(notification);
-        return { status: 'failed', error: 'SMTP connection failed.' };
+        return { status: 'failed', error: 'Email provider connection failed.' };
       },
     },
   }));

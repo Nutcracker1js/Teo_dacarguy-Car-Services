@@ -152,8 +152,15 @@ CREATE TABLE IF NOT EXISTS booking_notifications (
   last_error VARCHAR(1000),
   queued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   claimed_at TIMESTAMPTZ,
+  first_attempt_at TIMESTAMPTZ,
+  next_attempt_at TIMESTAMPTZ,
   sent_at TIMESTAMPTZ
 );
+ALTER TABLE booking_notifications ADD COLUMN IF NOT EXISTS first_attempt_at TIMESTAMPTZ;
+ALTER TABLE booking_notifications ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
+UPDATE booking_notifications
+SET first_attempt_at = queued_at
+WHERE first_attempt_at IS NULL AND attempts > 0;
 
 CREATE TABLE IF NOT EXISTS paystack_webhook_receipts (
   event_key VARCHAR(200) PRIMARY KEY,

@@ -1,83 +1,120 @@
-const nodemailer = require('nodemailer');
-
 const NOT_CONFIGURED = 'not_configured';
+const RESEND_API_URL = 'https://api.resend.com/emails';
+const MAX_PROVIDER_ATTEMPTS = 3;
 
-function getNotificationReadiness(environment = process.env) {
-  const emailMissing = [
-    ['SMTP_HOST', environment.SMTP_HOST],
-    ['SMTP_USER', environment.SMTP_USER],
-    ['SMTP_PASSWORD', environment.SMTP_PASSWORD],
-    ['NOTIFICATION_EMAIL', environment.NOTIFICATION_EMAIL],
+function getNotificationReadiness(environment = process.env, { requireRecipient = true } = {}) {
+  const missing = [
+    ['RESEND_API_KEY', environment.RESEND_API_KEY],
+    ['RESEND_FROM', environment.RESEND_FROM],
+    ...(requireRecipient ? [['NOTIFICATION_EMAIL', environment.NOTIFICATION_EMAIL]] : []),
   ].filter(([, value]) => !value).map(([key]) => key);
-  const smtpPort = Number(environment.SMTP_PORT || 587);
-  if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) {
-    emailMissing.push('SMTP_PORT');
-  }
-  return { email: { configured: emailMissing.length === 0, missing: emailMissing } };
+  return { email: { configured: missing.length === 0, missing } };
 }
 
 function createNotificationSender(
   environment = process.env,
-  transportFactory = nodemailer.createTransport,
+  { fetch: fetchImplementation = globalThis.fetch, sleep = delay } = {},
 ) {
   const readiness = getNotificationReadiness(environment);
-  const transport = readiness.email.configured
-    ? transportFactory({
-      host: environment.SMTP_HOST,
-      port: Number(environment.SMTP_PORT || 587),
-      secure: environment.SMTP_SECURE === 'true',
-      requireTLS: environment.SMTP_SECURE !== 'true',
-      localAddress: '0.0.0.0',
-      auth: {
-        user: environment.SMTP_USER,
-        pass: environment.SMTP_PASSWORD,
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
-    })
-    : null;
-
   return async function sendNotifications(submission) {
-    const email = await sendEmail(transport, environment, readiness.email, submission);
+    const email = await sendEmail(environment, readiness.email, submission, fetchImplementation, sleep);
     return { email };
   };
 }
 
-function createCustomerEmailSender(environment = process.env, transportFactory = nodemailer.createTransport) {
-  const smtpPort = Number(environment.SMTP_PORT || 587);
-  const missing = [
-    ['SMTP_HOST', environment.SMTP_HOST],
-    ['SMTP_USER', environment.SMTP_USER],
-    ['SMTP_PASSWORD', environment.SMTP_PASSWORD],
-  ].filter(([, value]) => !value).map(([key]) => key);
-  if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535) missing.push('SMTP_PORT');
-  if (!environment.SMTP_FROM && !environment.SMTP_USER) missing.push('SMTP_FROM');
-  const transport = missing.length ? null : transportFactory({
-    host: environment.SMTP_HOST,
-    port: smtpPort,
-    secure: environment.SMTP_SECURE === 'true',
-    requireTLS: environment.SMTP_SECURE !== 'true',
-    localAddress: '0.0.0.0',
-    auth: { user: environment.SMTP_USER, pass: environment.SMTP_PASSWORD },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
-  });
-
+function createCustomerEmailSender(
+  environment = process.env,
+  { fetch: fetchImplementation = globalThis.fetch, sleep = delay } = {},
+) {
+  const readiness = getNotificationReadiness(environment, { requireRecipient: false }).email;
   const sendCustomerEmail = async function sendCustomerEmail(notification) {
-    if (!transport) throw new Error(`Customer email is not configured; missing: ${missing.join(', ')}.`);
+    if (!readiness.configured) {
+      throw new Error(`Customer email is not configured; missing: ${readiness.missing.join(', ')}.`);
+    }
     const { subject, text, html } = renderCustomerEmail(notification);
-    await transport.sendMail({
-      from: environment.SMTP_FROM || environment.SMTP_USER,
+    await sendResendEmail({
+      apiKey: environment.RESEND_API_KEY,
+      from: environment.RESEND_FROM,
       to: notification.to,
       subject,
       text,
       html,
+      idempotencyKey: notification.id && `customer-notification-${notification.id}`,
+      fetchImplementation,
+      sleep,
     });
   };
-  sendCustomerEmail.readiness = { configured: missing.length === 0, missing };
+  sendCustomerEmail.readiness = readiness;
   return sendCustomerEmail;
+}
+
+async function sendResendEmail({
+  apiKey,
+  from,
+  to,
+  subject,
+  text,
+  html,
+  idempotencyKey,
+  fetchImplementation,
+  sleep,
+}) {
+  if (typeof fetchImplementation !== 'function') throw new Error('HTTPS email transport is unavailable in this Node.js runtime.');
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetchImplementation(RESEND_API_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+        },
+        body: JSON.stringify({ from, to, subject, text, ...(html ? { html } : {}) }),
+      });
+      if (response.ok) return;
+
+      const details = await readProviderError(response);
+      const error = new Error(`Resend API returned HTTP ${response.status}${details.message ? `: ${details.message}` : '.'}`);
+      error.statusCode = response.status;
+      error.requestId = response.headers?.get('x-resend-id') || details.requestId || null;
+      if (response.status !== 429 && response.status < 500) throw error;
+      lastError = error;
+    } catch (error) {
+      if (error.statusCode && error.statusCode !== 429 && error.statusCode < 500) throw error;
+      lastError = error;
+    }
+
+    if (attempt < MAX_PROVIDER_ATTEMPTS) await sleep(250 * (2 ** (attempt - 1)));
+  }
+  const error = new Error(`Resend API request failed after ${MAX_PROVIDER_ATTEMPTS} attempts: ${sanitizeProviderMessage(lastError?.message)}`);
+  error.statusCode = lastError?.statusCode;
+  error.requestId = lastError?.requestId || null;
+  throw error;
+}
+
+async function readProviderError(response) {
+  const raw = await response.text();
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    data = null;
+  }
+  return {
+    message: sanitizeProviderMessage(data?.message || data?.error || raw),
+    requestId: data?.id || data?.request_id || null,
+  };
+}
+
+function sanitizeProviderMessage(message) {
+  return String(message || '').slice(0, 300)
+    .replace(/re_[A-Za-z0-9_-]+/g, '[redacted]')
+    .replace(/(?:password|token|secret|authorization|bearer)\s*[:=]?\s*[^\s,;]+/gi, '[redacted]');
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function renderCustomerEmail(notification) {
@@ -157,7 +194,7 @@ function renderCustomerEmail(notification) {
     notification.paymentPageUrl && `<p><a href="${escaped(notification.paymentPageUrl)}">Open the secure payment page</a></p>`,
     notification.bookingStatusUrl && `<p><a href="${escaped(notification.bookingStatusUrl)}">View your booking and receipt details</a></p>`,
     notification.responseUrl && `<p><a href="${escaped(notification.responseUrl)}">Respond to the proposed appointment</a></p>`,
-    notification.slipUrl && `<p><a href="${escaped(notification.slipUrl)}">Download your booking slip</a></p>`,
+    notification.slipUrl && `<p><a href="${escaped(notification.slipUrl)}">Download your secure booking slip</a></p>`,
   ].filter(Boolean).join('');
   const extra = [
     notification.declineReason && `<p>${escaped(notification.declineReason)}</p>`,
@@ -182,7 +219,7 @@ function statusText(value) {
   return String(value || '').toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-async function sendEmail(transport, environment, readiness, submission) {
+async function sendEmail(environment, readiness, submission, fetchImplementation, sleep) {
   if (!readiness.configured) return NOT_CONFIGURED;
   try {
     const isBooking = submission.type === 'booking';
@@ -194,8 +231,9 @@ async function sendEmail(transport, environment, readiness, submission) {
         `Location: ${submission.data.location}${submission.data.locationOther ? ` - ${submission.data.locationOther}` : ''}`,
       ].join('\n')
       : `Enquiry type: ${submission.data.enquiryType}\nMessage: ${submission.data.description}`;
-    await transport.sendMail({
-      from: environment.SMTP_FROM || environment.SMTP_USER,
+    await sendResendEmail({
+      apiKey: environment.RESEND_API_KEY,
+      from: environment.RESEND_FROM,
       to: environment.NOTIFICATION_EMAIL,
       subject: `New ${isBooking ? 'booking request' : 'enquiry'} · ${submission.id}`,
       text: [
@@ -207,6 +245,9 @@ async function sendEmail(transport, environment, readiness, submission) {
         `Attachments: ${submission.attachmentCount}`,
         'Review this request using your private business workflow.',
       ].join('\n'),
+      idempotencyKey: `submission-${submission.id}`,
+      fetchImplementation,
+      sleep,
     });
     return 'sent';
   } catch (error) {
@@ -221,7 +262,9 @@ function reportDeliveryFailure(channel, reference, error) {
     message: 'Submission notification delivery failed.',
     channel,
     reference,
-    error: error.message,
+    providerStatus: error.statusCode || null,
+    providerRequestId: error.requestId || null,
+    error: sanitizeProviderMessage(error.message),
   }));
 }
 

@@ -8,23 +8,25 @@ const {
 } = require('./notifications');
 
 const notificationEnvironment = {
-  SMTP_HOST: 'smtp.example.test',
-  SMTP_PORT: '587',
-  SMTP_USER: 'api@example.test',
-  SMTP_PASSWORD: 'test-password',
-  SMTP_FROM: 'Teo Garage <api@example.test>',
+  RESEND_API_KEY: 'test-api-key-value',
+  RESEND_FROM: 'Teo Garage <bookings@example.test>',
   NOTIFICATION_EMAIL: 'owner@example.test',
 };
 
+function response(status, body = {}) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get() { return 'resend-request-id'; } },
+    async text() { return JSON.stringify(body); },
+  };
+}
+
 test('business booking notifications use email only', async () => {
-  let sentEmail;
+  let request;
   const sendNotifications = createNotificationSender(
     notificationEnvironment,
-    (options) => ({
-      async sendMail(message) {
-        sentEmail = { options, message };
-      },
-    }),
+    { fetch: async (...args) => { request = args; return response(200); } },
   );
 
   const result = await sendNotifications({
@@ -41,10 +43,15 @@ test('business booking notifications use email only', async () => {
   });
 
   assert.deepEqual(result, { email: 'sent' });
-  assert.equal(sentEmail.message.to, 'owner@example.test');
-  assert.equal(sentEmail.options.requireTLS, true);
-  assert.match(sentEmail.message.text, /request-reference/);
-  assert.match(sentEmail.message.text, /Attachments: 1/);
+  assert.equal(request[0], 'https://api.resend.com/emails');
+  assert.equal(request[1].method, 'POST');
+  assert.match(request[1].headers.Authorization, /^Bearer /);
+  assert.equal(request[1].headers['Idempotency-Key'], 'submission-request-reference');
+  const email = JSON.parse(request[1].body);
+  assert.equal(email.from, notificationEnvironment.RESEND_FROM);
+  assert.equal(email.to, 'owner@example.test');
+  assert.match(email.text, /request-reference/);
+  assert.match(email.text, /Attachments: 1/);
 });
 
 test('customer email templates cover proposal confirmation, decline reason, payment receipt and completion', () => {
@@ -90,8 +97,10 @@ test('customer email templates cover proposal confirmation, decline reason, paym
 
 test('unconfigured email notifications are reported rather than silently treated as sent', async () => {
   const readiness = getNotificationReadiness({});
-  const sendNotifications = createNotificationSender({}, () => {
-    throw new Error('Unconfigured SMTP transport was called.');
+  const sendNotifications = createNotificationSender({}, {
+    async fetch() {
+      throw new Error('Unconfigured HTTPS email transport was called.');
+    },
   });
 
   assert.equal(readiness.email.configured, false);
@@ -101,53 +110,54 @@ test('unconfigured email notifications are reported rather than silently treated
   );
 });
 
-test('email notifications default to the standard submission port', () => {
-  const environment = {
-    SMTP_HOST: 'smtp.example.test',
-    SMTP_USER: 'api@example.test',
-    SMTP_PASSWORD: 'test-password',
-    NOTIFICATION_EMAIL: 'owner@example.test',
-  };
-  let transportOptions;
-  createNotificationSender(environment, (options) => {
-    transportOptions = options;
-    return { async sendMail() {} };
-  });
-  assert.equal(getNotificationReadiness(environment).email.configured, true);
-  assert.equal(transportOptions.port, 587);
-  assert.equal(transportOptions.localAddress, '0.0.0.0');
-});
-
-test('customer email transport uses IPv4 for the SMTP connection', async () => {
-  let transportOptions;
-  let sentMessage;
-  const sendEmail = createCustomerEmailSender({
-    SMTP_HOST: 'smtp.example.test',
-    SMTP_PORT: '465',
-    SMTP_SECURE: 'true',
-    SMTP_USER: 'api@example.test',
-    SMTP_PASSWORD: 'test-password',
-  }, (options) => {
-    transportOptions = options;
-    return {
-      async sendMail(message) {
-        sentMessage = message;
-      },
-    };
+test('customer email transport sends APPOINTMENT_CONFIRMED over HTTPS with idempotency key', async () => {
+  let request;
+  const sendEmail = createCustomerEmailSender(notificationEnvironment, {
+    fetch: async (...args) => { request = args; return response(200); },
   });
 
   await sendEmail({
+    id: '15b25862-3b05-47e0-8ba4-ac1cf4e0beb0',
     to: 'customer@example.test',
-    eventType: 'BOOKING_RECEIVED',
+    eventType: 'APPOINTMENT_CONFIRMED',
     customerName: 'Ada Customer',
-    reference: 'TD-1001',
+    reference: 'TEO-1001',
     service: 'MAINTENANCE',
+    preferredDate: '2027-01-20',
+    preferredTime: '10:30',
   });
 
-  assert.equal(transportOptions.port, 465);
-  assert.equal(transportOptions.secure, true);
-  assert.equal(transportOptions.localAddress, '0.0.0.0');
-  assert.equal(sentMessage.to, 'customer@example.test');
+  const email = JSON.parse(request[1].body);
+  assert.equal(request[0], 'https://api.resend.com/emails');
+  assert.equal(request[1].headers['Idempotency-Key'], 'customer-notification-15b25862-3b05-47e0-8ba4-ac1cf4e0beb0');
+  assert.equal(email.to, 'customer@example.test');
+  assert.match(email.subject, /appointment is confirmed/i);
+  assert.match(email.text, /Teo has confirmed your appointment/);
+  assert.match(email.html, /Your appointment is confirmed/);
+});
+
+test('transient Resend responses retry with the same idempotency key', async () => {
+  const requests = [];
+  const delays = [];
+  let calls = 0;
+  const sendEmail = createCustomerEmailSender(notificationEnvironment, {
+    async fetch(url, options) {
+      requests.push({ url, options });
+      calls += 1;
+      return calls < 3 ? response(503, { message: 'temporarily unavailable' }) : response(200);
+    },
+    async sleep(milliseconds) { delays.push(milliseconds); },
+  });
+
+  await sendEmail({
+    id: 'notification-retry',
+    to: 'customer@example.test',
+    eventType: 'APPOINTMENT_CONFIRMED',
+  });
+
+  assert.equal(requests.length, 3);
+  assert.deepEqual(delays, [250, 500]);
+  assert.equal(new Set(requests.map(({ options }) => options.headers['Idempotency-Key'])).size, 1);
 });
 
 test('failed notification provider does not claim delivery', async () => {
@@ -157,7 +167,10 @@ test('failed notification provider does not claim delivery', async () => {
   try {
     const sendNotifications = createNotificationSender(
       notificationEnvironment,
-      () => ({ async sendMail() { throw new Error('SMTP unavailable.'); } }),
+      {
+        async fetch() { return response(400, { message: 'Invalid sender.' }); },
+        async sleep() {},
+      },
     );
     const result = await sendNotifications({
       type: 'enquiry',
@@ -173,6 +186,7 @@ test('failed notification provider does not claim delivery', async () => {
 
     assert.deepEqual(result, { email: 'failed' });
     assert.match(logged, /notification delivery failed/);
+    assert.match(logged, /Invalid sender/);
   } finally {
     console.error = originalError;
   }

@@ -5,6 +5,7 @@ const { processExpiredBookings } = require('./booking-expiry');
 const { canIssueBookingSlip, createBookingSlip } = require('./booking-slip');
 const { createCustomerNotificationService } = require('./customer-notifications');
 const { applyVerifiedPayment } = require('./payment-processing');
+const { createCustomerEmailSender } = require('./notifications');
 const { verifyPaystackSignature } = require('./payments');
 const { updateBookingStatus } = require('./admin');
 
@@ -259,13 +260,151 @@ test('failed customer emails are reported and can be retried', async () => {
     pool,
     async sendEmail() {
       providerCalls += 1;
-      if (providerCalls === 1) throw new Error('SMTP temporarily unavailable.');
+      if (providerCalls === 1) throw new Error('Email provider temporarily unavailable.');
     },
   });
 
   assert.equal((await service.deliver('notification-id')).status, 'failed');
   assert.equal((await service.deliver('notification-id')).status, 'sent');
   assert.equal(deliveryAttempts, 2);
+});
+
+test('APPOINTMENT_CONFIRMED outbox event is delivered through Resend with a stable idempotency key', async () => {
+  let request;
+  let sent = false;
+  const pool = {
+    async query(sql) {
+      if (sql.includes("SET delivery_status = 'SENDING'")) {
+        return {
+          rowCount: 1,
+          rows: [{
+            id: '15b25862-3b05-47e0-8ba4-ac1cf4e0beb0',
+            event_type: 'APPOINTMENT_CONFIRMED',
+            recipient: 'customer@example.com',
+            payload: {
+              customerName: 'Test Customer',
+              reference: 'TEO-1001',
+              service: 'MAINTENANCE',
+              preferredDate: '2027-01-20',
+              preferredTime: '10:30',
+            },
+            attempts: 1,
+          }],
+        };
+      }
+      if (sql.includes("SET delivery_status = 'SENT'")) sent = true;
+      return { rowCount: 1, rows: [] };
+    },
+  };
+  const sendEmail = createCustomerEmailSender({
+    RESEND_API_KEY: 'test-api-key-value',
+    RESEND_FROM: 'Teo Garage <bookings@example.test>',
+  }, {
+    async fetch(url, options) {
+      request = { url, options };
+      return {
+        ok: true,
+        status: 200,
+        headers: { get() { return 'resend-request-id'; } },
+      };
+    },
+  });
+  const service = createCustomerNotificationService({ pool, sendEmail });
+
+  assert.deepEqual(await service.deliver('15b25862-3b05-47e0-8ba4-ac1cf4e0beb0'), { status: 'sent' });
+  assert.equal(sent, true);
+  assert.equal(request.url, 'https://api.resend.com/emails');
+  assert.equal(
+    request.options.headers['Idempotency-Key'],
+    'customer-notification-15b25862-3b05-47e0-8ba4-ac1cf4e0beb0',
+  );
+  assert.match(JSON.parse(request.options.body).subject, /appointment is confirmed/i);
+});
+
+test('retrying a failed customer notification reuses its Resend idempotency key', async () => {
+  let status = 'PENDING';
+  let attempts = 0;
+  const id = 'notification-retry-id';
+  const idempotencyKeys = [];
+  let scheduledRetry = false;
+  let providerCalls = 0;
+  const pool = {
+    async query(sql) {
+      if (sql.includes("SET delivery_status = 'SENDING'")) {
+        if (!['PENDING', 'FAILED'].includes(status)) return { rowCount: 0, rows: [] };
+        status = 'SENDING';
+        attempts += 1;
+        return {
+          rowCount: 1,
+          rows: [{
+            id,
+            event_type: 'APPOINTMENT_CONFIRMED',
+            recipient: 'customer@example.com',
+            payload: { customerName: 'Test Customer', reference: 'TEO-1001' },
+            attempts,
+          }],
+        };
+      }
+      if (sql.includes("SET delivery_status = 'FAILED'")) {
+        status = 'FAILED';
+        scheduledRetry = sql.includes('next_attempt_at = CASE');
+      }
+      if (sql.includes("SET delivery_status = 'SENT'")) status = 'SENT';
+      return { rowCount: 1, rows: [] };
+    },
+  };
+  const sendEmail = createCustomerEmailSender({
+    RESEND_API_KEY: 'test-api-key-value',
+    RESEND_FROM: 'Teo Garage <bookings@example.test>',
+  }, {
+    async fetch(_url, options) {
+      idempotencyKeys.push(options.headers['Idempotency-Key']);
+      providerCalls += 1;
+      return providerCalls === 1
+        ? { ok: false, status: 400, headers: { get() { return null; } }, async text() { return '{"message":"bad sender"}'; } }
+        : { ok: true, status: 200, headers: { get() { return null; } } };
+    },
+  });
+  const service = createCustomerNotificationService({ pool, sendEmail });
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    assert.equal((await service.deliver(id)).status, 'failed');
+    assert.equal((await service.deliver(id)).status, 'sent');
+  } finally {
+    console.error = originalError;
+  }
+
+  assert.equal(status, 'SENT');
+  assert.equal(scheduledRetry, true);
+  assert.equal(new Set(idempotencyKeys).size, 1);
+});
+
+test('customer notification retries stop before the Resend idempotency key expires', async () => {
+  const pool = {
+    async query(sql) {
+      if (sql.includes('first_attempt_at <= NOW() - INTERVAL')) {
+        return { rowCount: 1, rows: [{ id: 'old-notification' }] };
+      }
+      return { rowCount: 0, rows: [] };
+    },
+  };
+  const service = createCustomerNotificationService({
+    pool,
+    async sendEmail() {
+      assert.fail('An expired retry must not call the email provider.');
+    },
+  });
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.deepEqual(await service.deliver('old-notification'), {
+      status: 'retry_window_expired',
+      error: 'Retry window expired; check Resend delivery history before sending this email again.',
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
 });
 
 test('repeating an approval email event retries its failed outbox entry', async () => {
@@ -358,7 +497,7 @@ test('repeating a proposed-date event retries its existing failed outbox email',
     pool,
     async sendEmail() {
       providerCalls += 1;
-      if (providerCalls === 1) throw new Error('SMTP temporarily unavailable.');
+      if (providerCalls === 1) throw new Error('Email provider temporarily unavailable.');
     },
   });
   const event = {

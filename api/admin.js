@@ -366,7 +366,7 @@ function createAdminRouter({
       return;
     }
     const result = await bookingNotifications.deliver(request.params.id);
-    response.status(result.status === 'sent' ? 200 : 502).json(result);
+    response.status(result.status === 'sent' ? 200 : result.status === 'retry_window_expired' ? 409 : 502).json(result);
   }));
 
   router.delete('/bookings/:id', authenticate, asyncHandler(async (request, response) => {
