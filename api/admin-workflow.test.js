@@ -88,6 +88,35 @@ const pool = {
         }],
       };
     }
+    if (sql.replace(/\s+/g, ' ').includes('SELECT id, reference, full_name, email, service, service_other')) {
+      return {
+        rowCount: 1,
+        rows: [{
+          id: bookingId,
+          reference: 'TD-1001',
+          full_name: 'Ada Customer',
+          phone: '+234 801 234 5678',
+          email: 'ada@example.test',
+          service: 'MAINTENANCE',
+          service_other: null,
+          preferred_date: '2027-01-20',
+          preferred_time: '10:30',
+          amount_expected: '50000',
+          amount_received: '50000',
+          payment_reference: 'pay-123',
+          payment_status: 'PAID',
+          payment_verification: 'VERIFIED',
+          status: currentBookingStatus,
+          vehicle_make: 'Toyota',
+          vehicle_model: 'Corolla',
+          vehicle_year: '2020',
+          registration: null,
+          location: 'BENIN_CITY',
+          location_other: null,
+          appointment_instructions: null,
+        }],
+      };
+    }
     if (sql.includes('SELECT id, blocked_date::text AS blocked_date')) {
       return {
         rows: [{
@@ -206,7 +235,7 @@ test('approving a booking prepares payment without automatically sending a Whats
   assert.ok(statusUpdate.sql.includes('$6::char(64) IS NULL'));
   assert.ok(statusUpdate.sql.includes('$10::char(64)'));
   const amountUpdate = queryLog.find(({ sql }) => sql.includes('UPDATE bookings SET amount_expected'));
-  assert.equal(amountUpdate.values[0], 80000);
+  assert.equal(amountUpdate.values[0], 50);
 
   const prepared = await request(`/bookings/${bookingId}/payment-link`, {
     method: 'POST',
@@ -228,6 +257,30 @@ test('re-approving an approved booking retries payment and email preparation', a
   const result = await response.json();
   assert.equal(result.paymentCheckout.status, 'ready');
   assert.equal(result.customerEmail.status, 'failed');
+});
+
+test('appointment confirmation email includes the verified booking slip PDF', async () => {
+  currentBookingStatus = 'AWAITING_APPROVAL';
+  currentPaymentStatus = 'PAID';
+  try {
+    const response = await request(`/bookings/${bookingId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'CONFIRMED' }),
+    });
+
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.status, 'CONFIRMED');
+    const notification = notificationPayloads.at(-1);
+    assert.equal(notification.eventType, 'APPOINTMENT_CONFIRMED');
+    assert.equal(notification.payload.attachments[0].filename, 'booking-TD-1001.pdf');
+    assert.equal(Buffer.from(notification.payload.attachments[0].content, 'base64').subarray(0, 4).toString(), '%PDF');
+    assert.match(notification.payload.slipUrl, /api\/v1\/booking-slip/);
+  } finally {
+    currentBookingStatus = 'AWAITING_APPROVAL';
+    currentPaymentStatus = 'UNPAID';
+  }
 });
 
 test('admin message API no longer sends customer WhatsApp messages', async () => {
@@ -336,7 +389,7 @@ test('fixed tint prices are enforced by the server on payment updates', async ()
   assert.equal(response.status, 200);
   const update = queryLog.at(-1);
   assert.ok(update.sql.includes('UPDATE bookings SET payment_status'));
-  assert.equal(update.values[1], 150000);
+  assert.equal(update.values[1], 100);
   currentService = {
     service: 'MAINTENANCE',
     service_option: null,

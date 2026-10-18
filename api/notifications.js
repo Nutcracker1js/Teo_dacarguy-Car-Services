@@ -1,6 +1,17 @@
 const NOT_CONFIGURED = 'not_configured';
 const RESEND_API_URL = 'https://api.resend.com/emails';
 const MAX_PROVIDER_ATTEMPTS = 3;
+const TINT_OPTIONS = require('../tint-options.json');
+
+const BOOKING_SERVICE_LABELS = {
+  MAINTENANCE: 'Maintenance & Repairs',
+  DETAILING: 'Detailing',
+  WRAPPING: 'Car Wrapping',
+  TINT: 'Tint / Glass Fortification',
+  UPGRADES: 'Upgrades & Modification',
+  REGISTRATION: 'Registration',
+  OTHER: 'Other',
+};
 
 function getNotificationReadiness(environment = process.env, { requireRecipient = true } = {}) {
   const missing = [
@@ -39,6 +50,7 @@ function createCustomerEmailSender(
       subject,
       text,
       html,
+      attachments: notification.attachments,
       idempotencyKey: notification.id && `customer-notification-${notification.id}`,
       fetchImplementation,
       sleep,
@@ -55,6 +67,7 @@ async function sendResendEmail({
   subject,
   text,
   html,
+  attachments,
   idempotencyKey,
   fetchImplementation,
   sleep,
@@ -70,7 +83,14 @@ async function sendResendEmail({
           'Content-Type': 'application/json',
           ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
         },
-        body: JSON.stringify({ from, to, subject, text, ...(html ? { html } : {}) }),
+        body: JSON.stringify({
+          from,
+          to,
+          subject,
+          text,
+          ...(html ? { html } : {}),
+          ...(attachments?.length ? { attachments } : {}),
+        }),
       });
       if (response.ok) return;
 
@@ -128,7 +148,7 @@ function renderCustomerEmail(notification) {
   const headings = {
     BOOKING_RECEIVED: ['We received your booking request', 'Your request is with Teo for review. Your appointment is not yet confirmed.'],
     BOOKING_ACCEPTED: ['Your booking request has been accepted', 'The booking is accepted for payment. Your appointment is not confirmed until payment is verified and Teo sends final approval.'],
-    BOOKING_QUOTE_REQUIRED: ['Your booking request has been reviewed', 'Teo needs to confirm the service quotation before payment can be arranged. Your appointment is not yet confirmed.'],
+    BOOKING_REVIEW_REQUIRED: ['Your booking is being reviewed', 'Teo will contact you with the next steps. Your appointment is not yet confirmed.'],
     BOOKING_DECLINED: ['An update about your booking', 'Teo is unable to accept this booking as requested.'],
     RESCHEDULE_PROPOSED: ['A new appointment time is proposed', 'Please review the proposed time and confirm or decline it using the secure response link below.'],
     RESCHEDULE_CONFIRMED: ['Your new appointment date is confirmed', 'Teo has confirmed the date you accepted. Use the secure payment link below if payment is still due.'],
@@ -180,6 +200,9 @@ function renderCustomerEmail(notification) {
   if (notification.paymentNotice) lines.push(`Payment update: ${String(notification.paymentNotice).slice(0, 500)}`);
   if (notification.responseUrl) lines.push(`Respond to the proposed time: ${notification.responseUrl}`);
   if (notification.slipUrl) lines.push(`Download your secure booking slip: ${notification.slipUrl}`);
+  if (notification.attachments?.some((attachment) => attachment.filename?.endsWith('.pdf'))) {
+    lines.push('Your confirmed booking slip is attached as a PDF.');
+  }
   if (!['APPOINTMENT_CONFIRMED', 'RESCHEDULE_CONFIRMED', 'JOB_COMPLETED'].includes(notification.eventType)) {
     lines.push('', 'Payment alone does not confirm an appointment. You will receive a separate email when Teo confirms the appointment.');
   }
@@ -196,6 +219,9 @@ function renderCustomerEmail(notification) {
     notification.responseUrl && `<p><a href="${escaped(notification.responseUrl)}">Respond to the proposed appointment</a></p>`,
     notification.slipUrl && `<p><a href="${escaped(notification.slipUrl)}">Download your secure booking slip</a></p>`,
   ].filter(Boolean).join('');
+  const attachmentNote = notification.attachments?.some((attachment) => attachment.filename?.endsWith('.pdf'))
+    ? '<p>Your confirmed booking slip is attached as a PDF.</p>'
+    : '';
   const extra = [
     notification.declineReason && `<p>${escaped(notification.declineReason)}</p>`,
     notification.instructions && `<p><strong>Instructions:</strong> ${escaped(notification.instructions)}</p>`,
@@ -204,7 +230,7 @@ function renderCustomerEmail(notification) {
   return {
     subject: `${title} · ${reference}`,
     text: [`Hello ${name},`, '', intro, '', ...lines, '', 'Teo DaCarguy Car Services'].join('\n'),
-    html: `<!doctype html><html><body style="margin:0;background:#f4f4f4;font-family:Arial,sans-serif;color:#171717"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 8px"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border-top:5px solid #c62026;padding:28px"><tr><td><p style="font-weight:bold;letter-spacing:1px">TEO DACARGUY CAR SERVICES</p><h1 style="font-size:24px">${escaped(title)}</h1><p>Hello ${escaped(name)}, ${escaped(intro)}</p><table role="presentation" cellspacing="0" cellpadding="0">${list}</table>${extra}${links}${['APPOINTMENT_CONFIRMED', 'RESCHEDULE_CONFIRMED', 'JOB_COMPLETED'].includes(notification.eventType) ? '' : '<p style="margin-top:28px;font-size:13px;color:#555">Payment alone does not confirm an appointment. You will receive a separate email when Teo confirms the appointment.</p>'}</td></tr></table></td></tr></table></body></html>`,
+    html: `<!doctype html><html><body style="margin:0;background:#f4f4f4;font-family:Arial,sans-serif;color:#171717"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 8px"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border-top:5px solid #c62026;padding:28px"><tr><td><p style="font-weight:bold;letter-spacing:1px">TEO DACARGUY CAR SERVICES</p><h1 style="font-size:24px">${escaped(title)}</h1><p>Hello ${escaped(name)}, ${escaped(intro)}</p><table role="presentation" cellspacing="0" cellpadding="0">${list}</table>${extra}${links}${attachmentNote}${['APPOINTMENT_CONFIRMED', 'RESCHEDULE_CONFIRMED', 'JOB_COMPLETED'].includes(notification.eventType) ? '' : '<p style="margin-top:28px;font-size:13px;color:#555">Payment alone does not confirm an appointment. You will receive a separate email when Teo confirms the appointment.</p>'}</td></tr></table></td></tr></table></body></html>`,
   };
 }
 
@@ -223,28 +249,74 @@ async function sendEmail(environment, readiness, submission, fetchImplementation
   if (!readiness.configured) return NOT_CONFIGURED;
   try {
     const isBooking = submission.type === 'booking';
-    const summary = isBooking
+    const reference = submission.reference || submission.id;
+    const fields = isBooking
       ? [
-        `Service: ${submission.data.service}${submission.data.serviceOther ? ` - ${submission.data.serviceOther}` : ''}`,
-        `Preferred date: ${submission.data.preferredDate}`,
-        `Preferred time: ${submission.data.preferredTime || 'Not specified'}`,
-        `Location: ${submission.data.location}${submission.data.locationOther ? ` - ${submission.data.locationOther}` : ''}`,
-      ].join('\n')
-      : `Enquiry type: ${submission.data.enquiryType}\nMessage: ${submission.data.description}`;
+        ['Booking reference', reference],
+        ['Customer', submission.data.fullName],
+        ['Phone', submission.data.phone],
+        ['WhatsApp', submission.data.whatsapp || 'Not provided'],
+        ['Email', submission.data.email || 'Not provided'],
+        ['Vehicle', [
+          submission.data.year,
+          submission.data.make,
+          submission.data.model,
+        ].filter(Boolean).join(' ') || 'Not provided'],
+        ['Registration', submission.data.registration || 'Not provided'],
+        ['Service', `${BOOKING_SERVICE_LABELS[submission.data.service] || submission.data.service}${submission.data.serviceOther ? ` — ${submission.data.serviceOther}` : ''}`],
+        ...(submission.data.tintOption && TINT_OPTIONS[submission.data.tintOption]
+          ? [[
+            'Tint option',
+            `${TINT_OPTIONS[submission.data.tintOption].label} — NGN ${TINT_OPTIONS[submission.data.tintOption].amountNgn.toLocaleString('en-NG')}`,
+          ]]
+          : []),
+        ['Preferred date', submission.data.preferredDate],
+        ['Preferred time', submission.data.preferredTime || 'Not specified'],
+        ['Location', `${submission.data.location}${submission.data.locationOther ? ` — ${submission.data.locationOther}` : ''}`],
+        ...(submission.data.details ? [['Customer notes', submission.data.details]] : []),
+      ]
+      : [
+        ['Submission reference', submission.id],
+        ['Customer', submission.data.fullName],
+        ['Phone', submission.data.phone],
+        ['WhatsApp', submission.data.whatsapp || 'Not provided'],
+        ['Email', submission.data.email || 'Not provided'],
+        ['Enquiry type', submission.data.enquiryType],
+        ['Vehicle', [submission.data.year, submission.data.make, submission.data.model].filter(Boolean).join(' ') || 'Not provided'],
+        ['Message', submission.data.description],
+      ];
+    fields.push([
+      'Uploaded files',
+      submission.attachmentCount
+        ? `${submission.attachmentCount} file(s), available in the secure admin workflow`
+        : 'None',
+    ]);
+    const escapeHtml = (value) => String(value ?? 'Not provided').replace(/[&<>"']/g, (character) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    })[character]);
+    const rows = fields.map(([label, value]) => (
+      `<tr><th align="left" style="padding:10px 14px 10px 0;vertical-align:top;border-bottom:1px solid #e5e5e5;color:#555;font-size:13px">${escapeHtml(label)}</th><td style="padding:10px 0;vertical-align:top;border-bottom:1px solid #e5e5e5;font-size:13px;white-space:pre-wrap">${escapeHtml(value)}</td></tr>`
+    )).join('');
+    const heading = isBooking ? 'New booking request' : 'New customer enquiry';
+    const text = [
+      heading,
+      '',
+      ...fields.map(([label, value]) => `${label}: ${value ?? 'Not provided'}`),
+      '',
+      'Review uploaded files and manage this request using the secure admin workflow.',
+      'Teo DaCarguy Car Services',
+    ].join('\n');
     await sendResendEmail({
       apiKey: environment.RESEND_API_KEY,
       from: environment.RESEND_FROM,
       to: environment.NOTIFICATION_EMAIL,
-      subject: `New ${isBooking ? 'booking request' : 'enquiry'} · ${submission.id}`,
-      text: [
-        `Reference: ${submission.id}`,
-        `Customer: ${submission.data.fullName}`,
-        `Phone: ${submission.data.phone}`,
-        `WhatsApp: ${submission.data.whatsapp || 'Not provided'}`,
-        summary,
-        `Attachments: ${submission.attachmentCount}`,
-        'Review this request using your private business workflow.',
-      ].join('\n'),
+      subject: `${heading} · ${reference}`,
+      text,
+      html: `<!doctype html><html><body style="margin:0;background:#f4f4f4;font-family:Arial,sans-serif;color:#171717"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 8px"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#fff;border-top:5px solid #c62026;padding:28px"><tr><td><p style="font-weight:bold;letter-spacing:1px">TEO DACARGUY CAR SERVICES</p><h1 style="font-size:23px;margin-bottom:6px">${heading}</h1><p style="margin-top:0;color:#555">A customer submission needs your review.</p><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse">${rows}</table><p style="margin-top:24px;font-size:13px;color:#555">Review this request and any uploaded files using the secure admin workflow.</p></td></tr></table></td></tr></table></body></html>`,
       idempotencyKey: `submission-${submission.id}`,
       fetchImplementation,
       sleep,
@@ -272,5 +344,6 @@ module.exports = {
   createCustomerEmailSender,
   createNotificationSender,
   getNotificationReadiness,
+  sendEmail,
   renderCustomerEmail,
 };

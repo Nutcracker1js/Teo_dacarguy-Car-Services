@@ -36,16 +36,16 @@
     <main id="main" class="booking-status-main">
       <section class="booking-status-card" aria-labelledby="payment-title">
         <p class="section-kicker">SECURE CHECKOUT</p>
-        <h1 id="payment-title">Pay for your booking.</h1>
-        <p class="booking-status-intro">Enter the booking reference and phone number used for your request. Payment is available only after Teo approves your booking.</p>
-        <p class="booking-local-storage-note">This browser can remember your latest booking reference and phone number on this device and website address only. Avoid saving on a shared device; clear saved details from the booking page.</p>
+        <h1 id="payment-title">Make a payment.</h1>
+        <p class="booking-status-intro">Enter your booking details to continue.</p>
+        <p class="booking-local-storage-note">Your latest booking details may be saved in this browser.</p>
         <form id="payment-lookup-form" class="booking-status-form">
           <label for="payment-reference">Booking reference</label>
           <input id="payment-reference" name="reference" autocomplete="off" placeholder="TEO-1000" required maxlength="24">
-          <label for="payment-phone">Phone number used for the booking</label>
+          <label for="payment-phone">Phone number</label>
           <input id="payment-phone" name="phone" type="tel" autocomplete="tel" placeholder="+234 801 234 5678" required maxlength="32">
           <p id="payment-error" class="form-error" role="alert" hidden></p>
-          <button id="payment-lookup-button" class="button button-bright" type="submit">Check booking</button>
+          <button id="payment-lookup-button" class="button button-bright" type="submit">View booking</button>
         </form>
         <section id="payment-result" class="booking-status-result payment-result" aria-live="polite" hidden>
           <p id="payment-status-label" class="booking-status-label"></p>
@@ -59,11 +59,11 @@
           </dl>
           <p id="payment-next-step" class="booking-status-next-step"></p>
           <form id="payment-checkout-form" class="booking-payment-form" hidden>
-            <button id="payment-checkout-button" class="button button-bright" type="submit">Continue to secure payment</button>
-            <small>Your receipt will be sent to the email address on your booking. Paystack securely processes your payment. Your appointment is confirmed only after payment verification and official approval.</small>
+            <button id="payment-checkout-button" class="button button-bright" type="submit">Pay with Paystack</button>
+            <small>Receipt sent to your booking email. Appointment confirmation follows payment verification.</small>
           </form>
         </section>
-        <p class="payment-help">Need help? <a href="https://wa.link/sdnpdi" target="_blank" rel="noopener noreferrer">Contact us on WhatsApp</a>.</p>
+        <p class="payment-help">Payment issue? <a href="https://wa.link/sdnpdi" target="_blank" rel="noopener noreferrer">Contact us on WhatsApp</a>.</p>
       </section>
     </main>
     <footer class="site-footer">

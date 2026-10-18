@@ -500,7 +500,7 @@ function createAdminRouter({
         ? 'RESCHEDULE_CONFIRMED'
         : result.body.paymentCheckout.status === 'ready'
           ? 'BOOKING_ACCEPTED'
-          : 'BOOKING_QUOTE_REQUIRED';
+          : 'BOOKING_REVIEW_REQUIRED';
       result.body.customerEmail = await notifyBookingEvent(
         pool,
         bookingNotifications,
@@ -511,7 +511,7 @@ function createAdminRouter({
           paymentPageUrl: result.body.paymentCheckout.paymentPageUrl || null,
           eventKey: result.body.rescheduleConfirmed
             ? `reschedule_confirmed:${request.params.id}:${result.body.proposalId}`
-            : `booking_accepted:${request.params.id}:${result.body.paymentCheckout.paymentPageUrl || result.body.paymentCheckout.authorizationUrl || 'quote-required'}`,
+            : `booking_accepted:${request.params.id}:${result.body.paymentCheckout.paymentPageUrl || result.body.paymentCheckout.authorizationUrl || 'review-required'}`,
           paymentDeadline: result.body.paymentCheckout.authorizationUrl && bookingResult.rows[0].payment_expires_at
             ? paymentDeadline(bookingResult.rows[0].payment_expires_at, paymentExpiryHours)
             : null,
@@ -661,7 +661,7 @@ function createAdminRouter({
       || (refundStatus !== existing.refund_status
         && !(['PAID', 'REFUND_PENDING'].includes(existing.payment_status)
           && ['INITIATED', 'COMPLETED'].includes(refundStatus)))) {
-      response.status(409).json({ error: 'Payment verification, amounts and transaction references are read-only. Use Paystack verification; only refund progress and an unpaid quotation can be edited here.' });
+      response.status(409).json({ error: 'Payment verification, amounts and transaction references are read-only. Use Paystack verification; only refund progress and an unpaid service amount can be edited here.' });
       return;
     }
     if (paymentStatus === 'REFUNDED' && refundStatus !== 'COMPLETED') {
@@ -1296,7 +1296,7 @@ async function notifyBookingEvent(pool, notifications, bookingId, eventType, ext
       preferred_date::text AS preferred_date, to_char(preferred_time, 'HH24:MI') AS preferred_time,
       amount_expected, amount_received, payment_reference, payment_status,
       refund_status, resolution, vehicle_make, vehicle_model, vehicle_year, registration,
-      location, location_other
+      phone, location, location_other, appointment_instructions, status, payment_verification
      FROM bookings WHERE id = $1`,
     [bookingId],
   );
@@ -1304,6 +1304,12 @@ async function notifyBookingEvent(pool, notifications, bookingId, eventType, ext
   const booking = result.rows[0];
   const { eventKey, ...eventPayload } = extra;
   try {
+    const attachments = eventType === 'APPOINTMENT_CONFIRMED' && canIssueBookingSlip(booking)
+      ? [{
+        filename: `booking-${booking.reference}.pdf`,
+        content: (await createBookingSlip(booking)).toString('base64'),
+      }]
+      : [];
     return await notifications.enqueueAndDeliver({
       bookingId,
       eventKey: eventKey || `${eventType.toLowerCase()}:${bookingId}:${crypto.randomUUID()}`,
@@ -1325,6 +1331,7 @@ async function notifyBookingEvent(pool, notifications, bookingId, eventType, ext
         vehicle: [booking.vehicle_year, booking.vehicle_make, booking.vehicle_model].filter(Boolean).join(' '),
         registration: booking.registration,
         location: booking.location_other || booking.location,
+        ...(attachments.length ? { attachments } : {}),
         ...eventPayload,
       },
     });

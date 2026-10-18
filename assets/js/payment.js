@@ -92,7 +92,7 @@ if (paymentLookupForm) {
         throw new Error('The payment service returned incomplete checkout details.');
       }
       checkoutButton.disabled = false;
-      checkoutButton.textContent = 'Continue to secure payment';
+      checkoutButton.textContent = 'Pay with Paystack';
       errorElement.hidden = true;
     } catch (error) {
       if (attempt !== checkoutAttempt) return;
@@ -154,17 +154,17 @@ if (paymentLookupForm) {
       : '';
 
     document.querySelector('#payment-status-label').textContent = paid
-      ? 'PAYMENT RECEIVED'
+      ? 'PAID'
       : approved && hasAmount
-        ? 'PAYMENT READY'
-        : 'BOOKING UPDATE';
+        ? 'PAYMENT DUE'
+        : 'BOOKING STATUS';
     document.querySelector('#payment-status-title').textContent = paid
-      ? 'Payment received.'
+      ? 'Payment received'
       : approved && hasAmount
-        ? 'Review your payment.'
+        ? 'Payment details'
         : approved
-          ? 'Payment amount is being confirmed.'
-          : 'Booking approval is pending.';
+          ? 'Price pending'
+          : 'Awaiting approval';
     document.querySelector('#payment-booking-reference').textContent = booking.reference;
     document.querySelector('#payment-service').textContent =
       booking.service_other || serviceLabels[booking.service] || booking.service;
@@ -176,17 +176,20 @@ if (paymentLookupForm) {
       : booking.payment_status === 'AWAITING_PAYMENT'
         ? 'Awaiting payment'
         : booking.payment_status || 'Unpaid';
-    document.querySelector('#payment-next-step').textContent = paid
-      ? 'Your payment has been received. Teo will confirm your appointment separately.'
+    const nextStep = paid
+      ? 'Payment verified. Teo will confirm your appointment separately.'
       : !approved
-        ? 'Teo will contact you after reviewing your booking. Do not make a payment until you receive approval.'
+        ? 'Payment is available after your booking is approved.'
         : !hasAmount
-          ? 'Teo will confirm the final price before you can proceed with payment.'
+          ? 'Teo will confirm the final price before payment.'
           : !checkoutAllowed
-            ? 'Contact Teo to arrange the next step for this payment.'
+            ? 'Please contact Teo to arrange payment.'
             : ['FAILED', 'EXPIRED'].includes(booking.payment_status)
-              ? 'The previous payment attempt did not complete. You can safely try checkout again below.'
-            : 'Your booking has been approved. Continue to Paystack to complete the confirmed payment.';
+              ? 'Payment was not completed. You can try again.'
+              : '';
+    const nextStepElement = document.querySelector('#payment-next-step');
+    nextStepElement.textContent = nextStep;
+    nextStepElement.hidden = !nextStep;
     checkoutForm.hidden = !approved || paid || !hasAmount || !checkoutAllowed;
     resultSection.hidden = false;
     if (!checkoutForm.hidden) prepareCheckout(booking);
@@ -243,7 +246,7 @@ if (paymentLookupForm) {
     if (typeof window.PaystackPop?.setup !== 'function') {
       showError('The secure Paystack checkout could not load. Refresh the page and try again.');
       checkoutButton.disabled = false;
-      checkoutButton.textContent = 'Continue to secure payment';
+      checkoutButton.textContent = 'Pay with Paystack';
       return;
     }
     checkoutButton.disabled = true;

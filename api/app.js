@@ -815,7 +815,13 @@ function createSubmissionHandler({
       transactionStarted = false;
       client.release();
       client = null;
-      const submission = { type: uploadType, id, data, attachmentCount: inspected.length };
+      const submission = {
+        type: uploadType,
+        id,
+        ...(uploadType === 'booking' ? { reference: result.rows[0].reference } : {}),
+        data,
+        attachmentCount: inspected.length,
+      };
       let notifications;
       try {
         notifications = await sendNotifications(submission);

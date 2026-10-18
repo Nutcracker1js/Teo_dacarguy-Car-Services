@@ -2699,29 +2699,33 @@ main.consultation-page {
 }
 .booking-tint-selection {
   display: grid;
-  gap: 7px;
-  margin-top: 14px;
-  padding: 15px;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 12px;
   border-left: 3px solid var(--red);
   background: #f5f4f1;
 }
 .booking-tint-selection[hidden] {
   display: none;
 }
-.booking-tint-selection strong {
+.booking-tint-selection label {
   color: var(--ink);
-  font-size: 13px;
+  font-size: 10px;
+  font-weight: 700;
 }
-.booking-tint-selection > span {
-  color: var(--red);
-  font-size: 15px;
-  font-weight: 800;
+.booking-tint-selection select {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font: 12px var(--body);
 }
 .booking-tint-selection p {
   margin: 0;
-  color: var(--muted);
+  color: var(--red);
   font-size: 10px;
-  line-height: 1.6;
+  font-weight: 700;
 }
 .booking-status-main {
   min-height: 70vh;

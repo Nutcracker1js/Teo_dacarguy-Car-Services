@@ -432,8 +432,7 @@ if (bookingForm) {
   const bookingLocation = document.querySelector('#booking-location');
   const bookingTintOption = document.querySelector('#booking-tint-option');
   const bookingTintSelection = document.querySelector('#booking-tint-selection');
-  const bookingTintLabel = document.querySelector('#booking-tint-label');
-  const bookingTintEstimate = document.querySelector('#booking-tint-estimate');
+  const bookingTintPrice = document.querySelector('#booking-tint-price');
   const bookingPolicy = document.querySelector('#booking-policy');
   const bookingPolicyLink = document.querySelector('[data-open-policy]');
   const bookingPolicyModal = document.querySelector('#booking-policy-modal');
@@ -452,6 +451,8 @@ if (bookingForm) {
   let bookingSubmitted = false;
   let restoringBookingDraft = false;
   let availabilityRequestId = 0;
+  let tintOptionsRequest;
+  let tintOptionsLoaded = false;
 
   const today = new Date();
   bookingDate.min = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-');
@@ -550,47 +551,93 @@ if (bookingForm) {
 
   bookingDate.addEventListener('change', loadAvailableBookingTimes);
   bookingService.addEventListener('change', loadAvailableBookingTimes);
-  bookingService.addEventListener('change', () => {
-    if (bookingService.value !== 'TINT') {
+  const updateTintSelection = () => {
+    const isTintService = bookingService.value === 'TINT';
+    bookingTintSelection.hidden = !isTintService;
+    bookingTintOption.disabled = !isTintService || !tintOptionsLoaded;
+    bookingTintOption.required = isTintService;
+    if (!isTintService) {
       bookingTintOption.value = '';
-      bookingTintSelection.hidden = true;
+      bookingTintPrice.textContent = '';
+      return;
     }
+    if (tintOptionsLoaded || tintSelectionLoadFailed) return;
+    const emptyTintOption = new Option('', '');
+    emptyTintOption.disabled = true;
+    emptyTintOption.hidden = true;
+    emptyTintOption.selected = true;
+    bookingTintOption.replaceChildren(emptyTintOption);
+    tintOptionsRequest ||= fetch(new URL('tint-options.json', window.location.href))
+      .then((response) => {
+        if (!response.ok) throw new Error('Could not load tint options.');
+        return response.json();
+      })
+      .then((options) => {
+        if (!options || typeof options !== 'object' || Array.isArray(options)
+          || !Object.entries(options).length
+          || Object.entries(options).some(([, option]) => (
+            !option || typeof option.label !== 'string'
+            || !Number.isSafeInteger(option.amountNgn) || option.amountNgn <= 0
+          ))) {
+          throw new Error('Tint prices are unavailable. Please contact Teo for assistance.');
+        }
+        const money = new Intl.NumberFormat('en-NG', {
+          style: 'currency',
+          currency: 'NGN',
+          maximumFractionDigits: 0,
+        });
+        const emptyOption = new Option('', '');
+        emptyOption.disabled = true;
+        emptyOption.hidden = true;
+        emptyOption.selected = true;
+        bookingTintOption.replaceChildren(emptyOption);
+        Object.entries(options).forEach(([value, option]) => {
+          bookingTintOption.add(new Option(`${option.label} — ${money.format(option.amountNgn)}`, value));
+        });
+        tintOptionsLoaded = true;
+        const requestedTint = bookingQuery.get('tintOption') || savedFormDraft?.tintOption || '';
+        if (requestedTint && Object.hasOwn(options, requestedTint)) {
+          bookingTintOption.value = requestedTint;
+        } else if (requestedTint) {
+          throw new Error('This tint option is no longer available. Please choose another option.');
+        }
+        bookingTintOption.disabled = bookingService.value !== 'TINT';
+        bookingTintPrice.textContent = bookingTintOption.value
+          ? `Listed price: ${money.format(options[bookingTintOption.value].amountNgn)}`
+          : 'Select a tint type to view its listed price.';
+      })
+      .catch((error) => {
+        tintSelectionLoadFailed = true;
+        const emptyOption = new Option('', '');
+        emptyOption.disabled = true;
+        emptyOption.hidden = true;
+        emptyOption.selected = true;
+        bookingTintOption.replaceChildren(emptyOption);
+        bookingTintOption.disabled = true;
+        bookingError.textContent = error.message;
+        bookingError.hidden = false;
+      });
+  };
+  bookingTintOption.addEventListener('change', () => {
+    if (!tintOptionsLoaded || !bookingTintOption.value) {
+      bookingTintPrice.textContent = 'Select a tint type to view its listed price.';
+      return;
+    }
+    const selectedOption = bookingTintOption.selectedOptions[0];
+    bookingTintPrice.textContent = selectedOption
+      ? `Selected price: ${selectedOption.textContent.split(' — ').at(-1)}`
+      : '';
+  });
+  bookingService.addEventListener('change', () => {
+    updateTintSelection();
   });
   const bookingQuery = new URLSearchParams(window.location.search);
   let tintSelectionLoadFailed = false;
   if (bookingQuery.get('service') === 'TINT') {
     bookingService.value = 'TINT';
   }
-  if (bookingQuery.has('tintOption') || (savedFormDraft?.service === 'TINT' && savedFormDraft.tintOption)) {
-    fetch(new URL('tint-options.json', window.location.href))
-      .then((response) => {
-        if (!response.ok) throw new Error('Could not load tint options.');
-        return response.json();
-      })
-      .then((options) => {
-        const tintOption = bookingQuery.get('tintOption') || savedFormDraft.tintOption;
-        const selectedTint = options[tintOption];
-        if (!selectedTint || !Number.isSafeInteger(selectedTint.amountNgn)) {
-          throw new Error('This tint option is no longer available. Please choose it again from the services page.');
-        }
-        const serviceChanged = bookingService.value !== 'TINT';
-        bookingService.value = 'TINT';
-        bookingTintOption.value = tintOption;
-        bookingTintLabel.textContent = selectedTint.label;
-        bookingTintEstimate.textContent = `Listed price: ${new Intl.NumberFormat('en-NG', {
-          style: 'currency',
-          currency: 'NGN',
-          maximumFractionDigits: 0,
-        }).format(selectedTint.amountNgn)}`;
-        bookingTintSelection.hidden = false;
-        if (serviceChanged) bookingService.dispatchEvent(new Event('change'));
-      })
-      .catch((error) => {
-        tintSelectionLoadFailed = true;
-        bookingError.textContent = error.message;
-        bookingError.hidden = false;
-      });
-  }
+  bookingTintOption.disabled = bookingService.value !== 'TINT';
+  updateTintSelection();
 
   function syncBookingPolicyButton() {
     if (!bookingPolicy || !bookingSubmitButton) return;
@@ -771,10 +818,10 @@ if (bookingForm) {
       document.querySelector('#booking-confirmation-title').textContent = 'Booking Request Received';
       const notified = Object.values(result.notifications || {}).includes('sent');
       const selectedTint = bookingTintOption.value
-        ? ` Selected tint: ${bookingTintLabel.textContent} — ${bookingTintEstimate.textContent}.`
+        ? ` Selected tint: ${bookingTintOption.selectedOptions[0].textContent}.`
         : '';
       document.querySelector('#booking-confirmation-message').textContent =
-        `Your booking request has been received and is awaiting review.${selectedTint} ${result.attachmentCount ? `We stored ${result.attachmentCount} attachment${result.attachmentCount === 1 ? '' : 's'}.` : ''} If accepted, Teo will send instructions to pay through the secure payment page for the listed price or confirm a quote for services without a fixed price. Payment alone does not confirm the appointment; final approval comes separately. ${notified ? 'Teo has been notified.' : 'Automatic notifications are not configured or could not be sent; message Teo on WhatsApp with this reference.'}`;
+        `Your booking request has been received and is awaiting review.${selectedTint} ${result.attachmentCount ? `We stored ${result.attachmentCount} attachment${result.attachmentCount === 1 ? '' : 's'}.` : ''} Teo will contact you with the next steps. Payment alone does not confirm the appointment; final approval comes separately. ${notified ? 'Teo has been notified.' : 'Automatic notifications are not configured or could not be sent; message Teo on WhatsApp with this reference.'}`;
       document.querySelector('#booking-reference').textContent = `Booking reference: ${bookingReference}`;
       const statusLink = document.querySelector('#check-booking-status');
       statusLink.href = `booking-status.html?reference=${encodeURIComponent(bookingReference)}`;

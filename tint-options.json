@@ -1,18 +1,18 @@
 {
   "classic-smoke": {
     "label": "Classic smoke / charcoal",
-    "amountNgn": 80000
+    "amountNgn": 50
   },
   "blue-green": {
     "label": "Blue or green tint",
-    "amountNgn": 100000
+    "amountNgn": 65
   },
   "bronze-coloured": {
     "label": "Bronze / coloured finish",
-    "amountNgn": 110000
+    "amountNgn": 80
   },
   "ceramic": {
     "label": "Ceramic colour options",
-    "amountNgn": 150000
+    "amountNgn": 100
   }
 }

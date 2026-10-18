@@ -289,24 +289,16 @@
                   <option value="OTHER">Other</option>
                 </select>
               </div>
-              <input
-                id="booking-tint-option"
-                name="tintOption"
-                type="hidden"
-                value=""
-              />
               <div
                 class="booking-tint-selection"
                 id="booking-tint-selection"
-                role="status"
                 hidden
               >
-                <strong id="booking-tint-label"></strong>
-                <span id="booking-tint-estimate"></span>
-                <p>
-                  The listed price is saved with your request. Payment is
-                  requested only after Teo approves your booking.
-                </p>
+                <label for="booking-tint-option">Tint type <span>*</span></label>
+                <select id="booking-tint-option" name="tintOption" required disabled>
+                  <option value="" disabled hidden selected></option>
+                </select>
+                <p id="booking-tint-price" aria-live="polite"></p>
               </div>
               <div
                 class="form-field booking-conditional-field"

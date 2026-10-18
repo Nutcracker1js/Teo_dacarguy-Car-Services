@@ -926,9 +926,9 @@ test('tint booking saves its selected option and server-priced amount', async ()
   assert.match(result.reference, /^TEO-\d+$/);
   const savedBooking = saved.filter((item) => item.sql.includes('INSERT INTO bookings')).at(-1);
   assert.equal(savedBooking.values[18], 'ceramic');
-  assert.equal(savedBooking.values[19], 150000);
+  assert.equal(savedBooking.values[19], 100);
   assert.match(savedBooking.values[14], /Ceramic colour options/);
-  assert.match(savedBooking.values[14], /₦150,000/);
+  assert.match(savedBooking.values[14], /₦100/);
   assert.match(savedBooking.values[14], /payment is due only after booking approval/i);
 });
 

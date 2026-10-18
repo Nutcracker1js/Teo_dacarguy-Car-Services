@@ -32,12 +32,16 @@ test('business booking notifications use email only', async () => {
   const result = await sendNotifications({
     type: 'booking',
     id: 'request-reference',
+    reference: 'TEO-1000',
     data: {
       fullName: 'Ada Customer',
       phone: '+234 801 234 5678',
+      whatsapp: '+234 801 234 5678',
+      email: 'ada@example.test',
       service: 'MAINTENANCE',
       preferredDate: '2027-01-20',
       preferredTime: '10:30',
+      location: 'OUR_LOCATION',
     },
     attachmentCount: 1,
   });
@@ -50,8 +54,13 @@ test('business booking notifications use email only', async () => {
   const email = JSON.parse(request[1].body);
   assert.equal(email.from, notificationEnvironment.RESEND_FROM);
   assert.equal(email.to, 'owner@example.test');
-  assert.match(email.text, /request-reference/);
-  assert.match(email.text, /Attachments: 1/);
+  assert.match(email.subject, /New booking request · TEO-1000/);
+  assert.match(email.text, /Booking reference: TEO-1000/);
+  assert.match(email.text, /Preferred date: 2027-01-20/);
+  assert.match(email.text, /Uploaded files: 1 file\(s\), available in the secure admin workflow/);
+  assert.match(email.html, /New booking request/);
+  assert.match(email.html, /Ada Customer/);
+  assert.match(email.html, /WhatsApp/);
 });
 
 test('customer email templates cover proposal confirmation, decline reason, payment receipt and completion', () => {
@@ -125,6 +134,7 @@ test('customer email transport sends APPOINTMENT_CONFIRMED over HTTPS with idemp
     service: 'MAINTENANCE',
     preferredDate: '2027-01-20',
     preferredTime: '10:30',
+    attachments: [{ filename: 'booking-TEO-1001.pdf', content: Buffer.from('%PDF-1.7').toString('base64') }],
   });
 
   const email = JSON.parse(request[1].body);
@@ -133,7 +143,12 @@ test('customer email transport sends APPOINTMENT_CONFIRMED over HTTPS with idemp
   assert.equal(email.to, 'customer@example.test');
   assert.match(email.subject, /appointment is confirmed/i);
   assert.match(email.text, /Teo has confirmed your appointment/);
+  assert.match(email.text, /booking slip is attached as a PDF/i);
   assert.match(email.html, /Your appointment is confirmed/);
+  assert.deepEqual(email.attachments, [{
+    filename: 'booking-TEO-1001.pdf',
+    content: Buffer.from('%PDF-1.7').toString('base64'),
+  }]);
 });
 
 test('transient Resend responses retry with the same idempotency key', async () => {
