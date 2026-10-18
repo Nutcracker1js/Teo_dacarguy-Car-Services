@@ -63,6 +63,13 @@ test('Paystack gateway exposes only a mode-matched public key for Inline checkou
   assert.equal(matching.publicKey, 'pk_test_public');
   assert.equal(matching.publicKeyMatchesSecret, true);
 
+  const matchingLive = createPaystackGateway({
+    PAYSTACK_SECRET_KEY: 'sk_live_private',
+    PAYSTACK_PUBLIC_KEY: 'pk_live_public',
+  });
+  assert.equal(matchingLive.publicKey, 'pk_live_public');
+  assert.equal(matchingLive.publicKeyMatchesSecret, true);
+
   const mismatched = createPaystackGateway({
     PAYSTACK_SECRET_KEY: 'sk_test_private',
     PAYSTACK_PUBLIC_KEY: 'pk_live_public',
