@@ -383,66 +383,12 @@ function renderBookingDetails(result, feedback = null) {
     notice.textContent = feedback.message;
     root.append(notice);
   }
-  const customerSection = renderDetailSection(root, 'Customer information', [
+  renderDetailSection(root, 'Customer information', [
     ['Customer', booking.full_name],
     ['Phone', booking.phone],
     ['Email', booking.email],
     ['WhatsApp', booking.whatsapp],
   ]);
-  const contactNumber = String(booking.whatsapp || booking.phone || '').replace(/[^\d]/g, '');
-  if (contactNumber) {
-    const messageForm = document.createElement('div');
-    messageForm.className = 'booking-message-form';
-    const customMessage = document.createElement('textarea');
-    customMessage.name = 'message';
-    customMessage.rows = 4;
-    customMessage.maxLength = 1000;
-    customMessage.placeholder = 'Write a message to the customer when needed.';
-    customMessage.required = true;
-    customMessage.setAttribute('aria-label', 'Message to the customer');
-    messageForm.append(customMessage);
-    const sendMessage = document.createElement('a');
-    sendMessage.className = 'admin-view-button';
-    sendMessage.textContent = 'Message on WhatsApp';
-    sendMessage.target = '_blank';
-    sendMessage.rel = 'noopener noreferrer';
-    sendMessage.href = '#';
-    messageForm.append(sendMessage);
-    const messageFeedback = document.createElement('p');
-    messageFeedback.className = 'booking-message-feedback';
-    messageFeedback.setAttribute('role', 'status');
-    messageFeedback.setAttribute('aria-live', 'polite');
-    messageFeedback.hidden = true;
-    messageForm.append(messageFeedback);
-    const messageHelp = document.createElement('small');
-    messageHelp.textContent = 'This opens a WhatsApp draft. Review it and tap Send in WhatsApp.';
-    messageForm.append(messageHelp);
-    sendMessage.addEventListener('click', async (event) => {
-      const setMessageFeedback = (text, isError = false) => {
-        messageFeedback.textContent = text;
-        messageFeedback.classList.toggle('is-error', isError);
-        messageFeedback.hidden = !text;
-      };
-      setMessageFeedback('');
-      if (!customMessage.value.trim()) {
-        event.preventDefault();
-        setMessageFeedback('Write a message before opening WhatsApp.', true);
-        customMessage.focus();
-        return;
-      }
-      const whatsappNumber = /^0\d{10}$/.test(contactNumber)
-        ? `234${contactNumber.slice(1)}`
-        : contactNumber;
-      if (!/^[1-9]\d{7,14}$/.test(whatsappNumber)) {
-        event.preventDefault();
-        setMessageFeedback('The customer WhatsApp number is not valid. Add it in international format.', true);
-        return;
-      }
-      sendMessage.href = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(customMessage.value.trim())}`;
-      setMessageFeedback('WhatsApp will open with the message drafted. Review it and tap Send in WhatsApp.');
-    });
-    customerSection.append(messageForm);
-  }
   const tintNames = {
     'classic-smoke': 'Classic smoke / charcoal',
     'blue-green': 'Blue or green tint',
@@ -583,20 +529,23 @@ function renderBookingDetails(result, feedback = null) {
   savePayment.className = 'admin-view-button';
   savePayment.textContent = 'Save payment details';
   paymentForm.append(savePayment);
+  const savePaymentDetails = async () => {
+    const data = new FormData(paymentForm);
+    return sendJson(`/api/v1/admin/bookings/${booking.id}/payment`, 'PATCH', {
+      paymentStatus: paymentStatus.value,
+      email: data.get('email'),
+      amountExpected: data.get('amountExpected') === '' ? null : Number(data.get('amountExpected')),
+      amountReceived: Number(booking.amount_received || 0),
+      reference: booking.payment_reference,
+      verification: booking.payment_verification,
+      refundStatus: data.get('refundStatus'),
+    }, 'Could not update payment details.');
+  };
   paymentForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     savePayment.disabled = true;
     try {
-      const data = new FormData(paymentForm);
-      await sendJson(`/api/v1/admin/bookings/${booking.id}/payment`, 'PATCH', {
-        paymentStatus: paymentStatus.value,
-        email: data.get('email'),
-        amountExpected: data.get('amountExpected') === '' ? null : Number(data.get('amountExpected')),
-        amountReceived: Number(booking.amount_received || 0),
-        reference: booking.payment_reference,
-        verification: booking.payment_verification,
-        refundStatus: advancedData.get('refundStatus'),
-      }, 'Could not update payment details.');
+      await savePaymentDetails();
       await openBooking(booking.id);
       await refreshCurrentPanel();
     } catch (error) {
@@ -715,15 +664,29 @@ function renderBookingDetails(result, feedback = null) {
   });
   actions.append(statusForm);
   if (booking.status === 'APPROVED' && booking.payment_status !== 'PAID') {
-    actions.append(button('Prepare payment page and email customer', 'admin-view-button', async () => {
+    const preparePayment = button('Prepare payment page and email customer', 'admin-view-button', async () => {
+      preparePayment.disabled = true;
+      preparePayment.textContent = 'Saving payment details…';
       try {
+        await savePaymentDetails();
+        preparePayment.textContent = 'Preparing payment page…';
         const result = await sendJson(`/api/v1/admin/bookings/${booking.id}/payment-link`, 'POST', {});
-        showMessage(`Payment page is ready. Customer email: ${statusLabel(result.customerEmail?.status || 'not configured')}.`);
-        await openBooking(booking.id);
+        const emailStatus = statusLabel(result.customerEmail?.status || 'not configured');
+        const emailError = result.customerEmail?.status === 'failed' && result.customerEmail.error
+          ? ` ${result.customerEmail.error}`
+          : '';
+        await openBooking(booking.id, {
+          message: `Payment page prepared${result.paymentPageUrl ? `: ${result.paymentPageUrl}` : ''}. Customer email: ${emailStatus}.${emailError}`,
+          error: result.customerEmail?.status === 'failed',
+        });
       } catch (error) {
         showMessage(error.message);
+      } finally {
+        preparePayment.disabled = false;
+        preparePayment.textContent = 'Prepare payment page and email customer';
       }
-    }));
+    });
+    actions.append(preparePayment);
   }
   if (booking.status === 'CONFIRMED'
     && (Number(booking.amount_expected || 0) <= 0
@@ -1148,7 +1111,8 @@ document.querySelector('#hours-form').addEventListener('submit', async (event) =
 
 document.querySelector('#block-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const blockForm = event.currentTarget;
+  const form = new FormData(blockForm);
   const startsAt = form.get('startsAt');
   const endsAt = form.get('endsAt');
   if (Boolean(startsAt) !== Boolean(endsAt)) {
@@ -1162,7 +1126,7 @@ document.querySelector('#block-form').addEventListener('submit', async (event) =
       endsAt: endsAt || null,
       reason: form.get('reason'),
     }, 'Could not block this time.');
-    event.currentTarget.reset();
+    blockForm.reset();
     await loadAvailability();
     showMessage('Availability block added.');
   } catch (error) {

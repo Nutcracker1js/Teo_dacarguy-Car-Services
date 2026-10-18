@@ -2729,6 +2729,12 @@ main.consultation-page {
   place-items: start center;
   padding: 80px 22px;
 }
+.booking-status-page .footer-main {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.booking-status-page .footer-main .brand {
+  align-self: start;
+}
 .booking-status-card {
   width: min(100%, 650px);
   padding: clamp(24px, 5vw, 48px);
@@ -3465,6 +3471,9 @@ main.consultation-page {
   }
   .site-footer {
     padding: 44px 7% 0;
+  }
+  .booking-status-page .footer-main {
+    grid-template-columns: 1fr 1fr;
   }
   .footer-main {
     grid-template-columns: 1fr 1fr;

@@ -1,3 +1,23 @@
+const menuToggle = document.querySelector('.menu-toggle');
+const primaryNavigation = document.querySelector('.primary-navigation');
+
+if (menuToggle && primaryNavigation) {
+  menuToggle.addEventListener('click', () => {
+    const isOpen = menuToggle.getAttribute('aria-expanded') === 'true';
+    menuToggle.setAttribute('aria-expanded', String(!isOpen));
+    menuToggle.setAttribute('aria-label', isOpen ? 'Open navigation' : 'Close navigation');
+    primaryNavigation.classList.toggle('is-open', !isOpen);
+  });
+
+  primaryNavigation.addEventListener('click', (event) => {
+    if (event.target.closest('a')) {
+      menuToggle.setAttribute('aria-expanded', 'false');
+      menuToggle.setAttribute('aria-label', 'Open navigation');
+      primaryNavigation.classList.remove('is-open');
+    }
+  });
+}
+
 const statusForm = document.querySelector('#booking-status-form');
 
 if (statusForm) {
@@ -118,7 +138,7 @@ if (statusForm) {
         ? `Your booking has been accepted. Proceed with the confirmed payment amount below.`
         : 'Your booking has been accepted. Teo will confirm the final price before you can proceed with payment.'
       : isPaid
-        ? 'Your payment has been verified. Teo will confirm the appointment separately.'
+          ? 'Your payment has been received. Teo will confirm the appointment separately.'
         : nextStep;
     paymentForm.hidden = !isApproved || isPaid || !Number.isFinite(amountExpected) || amountExpected <= 0;
     resultSection.hidden = false;

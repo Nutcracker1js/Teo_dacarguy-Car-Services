@@ -154,7 +154,7 @@ if (paymentLookupForm) {
       : '';
 
     document.querySelector('#payment-status-label').textContent = paid
-      ? 'PAYMENT VERIFIED'
+      ? 'PAYMENT RECEIVED'
       : approved && hasAmount
         ? 'PAYMENT READY'
         : 'BOOKING UPDATE';
@@ -162,7 +162,9 @@ if (paymentLookupForm) {
       ? 'Payment received.'
       : approved && hasAmount
         ? 'Review your payment.'
-        : 'Payment is not available yet.';
+        : approved
+          ? 'Payment amount is being confirmed.'
+          : 'Booking approval is pending.';
     document.querySelector('#payment-booking-reference').textContent = booking.reference;
     document.querySelector('#payment-service').textContent =
       booking.service_other || serviceLabels[booking.service] || booking.service;
@@ -175,7 +177,7 @@ if (paymentLookupForm) {
         ? 'Awaiting payment'
         : booking.payment_status || 'Unpaid';
     document.querySelector('#payment-next-step').textContent = paid
-      ? 'Your payment has been verified. Teo will confirm your appointment separately.'
+      ? 'Your payment has been received. Teo will confirm your appointment separately.'
       : !approved
         ? 'Teo will contact you after reviewing your booking. Do not make a payment until you receive approval.'
         : !hasAmount
@@ -266,8 +268,6 @@ if (paymentLookupForm) {
       checkoutButton.textContent = 'Continue to secure payment';
     }
   });
-
-  if (savedBooking) paymentLookupForm.requestSubmit();
 
   if (referenceInput.value && phoneInput.value) paymentLookupForm.requestSubmit();
 }

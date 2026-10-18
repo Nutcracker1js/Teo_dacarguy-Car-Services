@@ -832,7 +832,7 @@ if (bookingReturnForm) {
   const renderStatus = (booking) => {
     const status = String(booking.status || '').replaceAll('_', ' ');
     const paid = booking.payment_status === 'PAID';
-    document.querySelector('#booking-return-label').textContent = paid ? 'PAYMENT VERIFIED' : status;
+    document.querySelector('#booking-return-label').textContent = paid ? 'PAYMENT RECEIVED' : status;
     document.querySelector('#booking-return-title').textContent = paid
       ? 'Your payment has been verified.'
       : ({

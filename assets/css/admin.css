@@ -187,11 +187,6 @@
   outline: 2px solid #e0080a22;
 }
 
-.booking-message-form textarea:focus {
-  border-color: var(--red);
-  outline: 2px solid #e0080a22;
-}
-
 .admin-login button {
   justify-self: start;
   margin-top: 6px;
@@ -879,76 +874,6 @@
   gap: 11px;
 }
 
-.booking-message-form {
-  display: grid;
-  grid-template-columns: 1fr;
-  align-items: start;
-  gap: 9px;
-  padding-top: 10px;
-  border-top: 1px solid #eff0f2;
-}
-
-.booking-message-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.booking-message-option {
-  min-height: 34px;
-  padding: 7px 10px;
-  border: 1px solid #d9dce0;
-  border-radius: 5px;
-  background: #fff;
-  color: #343940;
-  font: 700 10px/1.35 var(--body);
-  cursor: pointer;
-}
-
-.booking-message-option:hover:not(:disabled),
-.booking-message-option.is-active {
-  border-color: var(--red);
-  background: #fff2f2;
-  color: #9f1716;
-}
-
-.booking-message-option:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.booking-message-form textarea {
-  width: 100%;
-  min-height: 82px;
-  resize: vertical;
-  border: 1px solid #d9dce0;
-  border-radius: 5px;
-  padding: 9px;
-  color: #17191c;
-  font: 11px/1.5 var(--body);
-}
-
-.booking-message-form small {
-  color: #686d74;
-  font-size: 10px;
-  line-height: 1.5;
-}
-
-.booking-message-feedback {
-  margin: 0;
-  padding: 9px 10px;
-  border-radius: 5px;
-  background: #eaf6ed;
-  color: #225b31;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.booking-message-feedback.is-error {
-  background: #fff0ef;
-  color: #9f1716;
-}
-
 .booking-detail-disclosure {
   padding: 10px 12px;
   border: 1px solid #e5e7ea;
@@ -1310,7 +1235,6 @@
 
   .booking-edit-form,
   .booking-status-form,
-  .booking-message-form,
   .admin-note-form {
     grid-template-columns: minmax(0, 1fr);
   }
