@@ -19,11 +19,6 @@ if (paymentLookupForm) {
     .replace(/\/$/, '');
   const query = new URLSearchParams(window.location.search);
   referenceInput.value = query.get('reference') || query.get('bookingReference') || '';
-  const savedBooking = referenceInput.value
-    ? window.bookingBrowserStorage?.getBooking(referenceInput.value)
-    : window.bookingBrowserStorage?.getLatestBooking();
-  if (!referenceInput.value && savedBooking) referenceInput.value = savedBooking.reference;
-  if (savedBooking) phoneInput.value = savedBooking.phone;
   let activeBooking = null;
   let inlineCheckout = null;
   let legacyCheckoutUrl = null;
@@ -179,7 +174,7 @@ if (paymentLookupForm) {
     const nextStep = paid
       ? 'Payment verified. Teo will confirm your appointment separately.'
       : !approved
-        ? 'Payment is available after your booking is approved.'
+        ? ''
         : !hasAmount
           ? 'Teo will confirm the final price before payment.'
           : !checkoutAllowed
@@ -271,6 +266,4 @@ if (paymentLookupForm) {
       checkoutButton.textContent = 'Continue to secure payment';
     }
   });
-
-  if (referenceInput.value && phoneInput.value) paymentLookupForm.requestSubmit();
 }

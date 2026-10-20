@@ -165,7 +165,8 @@
                   />
                 </div>
                 <div class="form-field">
-                  <label for="booking-phone">Phone Number <span>*</span></label
+                  <label for="booking-phone"
+                    >Phone / WhatsApp Number <span>*</span></label
                   ><input
                     id="booking-phone"
                     name="phone"
@@ -176,6 +177,7 @@
                     maxlength="32"
                     placeholder="Include country code"
                   />
+                  <input id="booking-whatsapp" name="whatsapp" type="hidden" />
                 </div>
                 <div class="form-field">
                   <label for="booking-email">Email Address <span>*</span></label
@@ -187,20 +189,6 @@
                     required
                     maxlength="254"
                     placeholder="you@example.com"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="booking-whatsapp"
-                    >WhatsApp Number <span>*</span></label
-                  ><input
-                    id="booking-whatsapp"
-                    name="whatsapp"
-                    type="tel"
-                    autocomplete="tel"
-                    required
-                    minlength="7"
-                    maxlength="32"
-                    placeholder="Include country code"
                   />
                 </div>
               </div>
@@ -236,28 +224,6 @@
                     required
                     maxlength="80"
                     placeholder="e.g. Camry"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="booking-year">Year <span>(optional)</span></label
-                  ><input
-                    id="booking-year"
-                    name="year"
-                    type="number"
-                    inputmode="numeric"
-                    min="1950"
-                    step="1"
-                    list="booking-year-options"
-                    placeholder="Type or choose a year"
-                  /><datalist id="booking-year-options"></datalist>
-                </div>
-                <div class="form-field">
-                  <label for="booking-registration"
-                    >Registration Number <span>(optional)</span></label
-                  ><input
-                    id="booking-registration"
-                    name="registration"
-                    maxlength="32"
                   />
                 </div>
               </div>
@@ -384,65 +350,6 @@
               </div>
             </section>
 
-            <section
-              class="form-section"
-              aria-labelledby="booking-notes-heading"
-            >
-              <div class="form-section-heading">
-                <span>05</span>
-                <div>
-                  <p>ANYTHING ELSE WE SHOULD KNOW?</p>
-                  <h2 id="booking-notes-heading">Additional Details</h2>
-                </div>
-              </div>
-              <div class="form-field">
-                <label for="booking-details"
-                  >Tell us about the vehicle or service</label
-                ><textarea
-                  id="booking-details"
-                  name="details"
-                  rows="5"
-                  maxlength="3000"
-                  placeholder="Include symptoms, service preferences or other useful details."
-                ></textarea>
-              </div>
-            </section>
-
-            <section
-              class="form-section"
-              aria-labelledby="booking-upload-heading"
-            >
-              <div class="form-section-heading">
-                <span>06</span>
-                <div>
-                  <p>OPTIONAL</p>
-                  <h2 id="booking-upload-heading">Upload Photos / Videos</h2>
-                </div>
-              </div>
-              <label class="upload-zone" for="booking-attachments"
-                ><span class="upload-symbol" aria-hidden="true">+</span
-                ><strong>Select photos or short videos</strong
-                ><span
-                  >JPG, PNG, WebP, MP4 or MOV · up to 15 MB each · 6 files
-                  maximum</span
-                ><input
-                  id="booking-attachments"
-                  name="attachments"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
-                  multiple
-              /></label>
-              <ul
-                class="upload-preview"
-                id="booking-upload-preview"
-                aria-live="polite"
-              ></ul>
-              <p class="upload-disclaimer">
-                Selected files are sent with your booking request. JPG, PNG,
-                WebP, MP4 or MOV · up to 15 MB each · 6 files maximum.
-              </p>
-            </section>
-
             <div class="booking-policy-acceptance" aria-live="polite">
               <label for="booking-policy" class="booking-policy-check">
                 <input
@@ -477,12 +384,6 @@
             >
               Request Booking
             </button>
-            <p class="demo-notice">
-              Your request and attachments will be stored with your booking.
-              Payment and booking approval are separate steps, so the
-              appointment is not confirmed until Teo reviews it.
-            </p>
-            <p class="booking-draft-save-status" id="booking-draft-save-status" role="status">Your unfinished booking is saved on this device as you fill in the form.</p>
           </form>
 
           <aside class="consultation-aside">
@@ -509,14 +410,6 @@
                 <p id="booking-return-next-step" class="booking-status-next-step"></p>
                 <a class="button button-outline" id="booking-return-details-link" href="booking-status.html">Full booking details</a>
               </section>
-              <details class="booking-storage-details">
-                <summary>Saved details &amp; privacy</summary>
-                <p class="booking-local-storage-note" id="booking-local-storage-note">
-                  Your unfinished form and recent booking reference are saved in this browser on this website address only. This is not encrypted; avoid shared devices.
-                </p>
-                <p id="booking-draft-notice" class="booking-draft-notice" role="status" hidden></p>
-                <button type="button" class="booking-clear-saved" id="booking-clear-saved">Clear saved details</button>
-              </details>
             </section>
             <p class="section-kicker section-kicker-light">
               APPOINTMENT REQUEST
@@ -561,12 +454,6 @@
             until Teo contacts you.
           </p>
           <p id="booking-reference"></p>
-          <a
-            class="button button-bright"
-            id="check-booking-status"
-            href="booking-status.html"
-            >Check booking status</a
-          >
           <a
             class="button button-bright"
             href="https://wa.link/sdnpdi"

@@ -423,8 +423,8 @@ if (bookingForm) {
   const bookingLayout = document.querySelector('.consultation-layout');
   const bookingDate = document.querySelector('#booking-date');
   const bookingTime = document.querySelector('#booking-time');
-  const bookingFiles = document.querySelector('#booking-attachments');
-  const bookingPreviews = document.querySelector('#booking-upload-preview');
+  const bookingPhone = document.querySelector('#booking-phone');
+  const bookingWhatsapp = document.querySelector('#booking-whatsapp');
   const bookingError = document.querySelector('#booking-form-error');
   const bookingConfirmation = document.querySelector('#booking-confirmation');
   const editBooking = document.querySelector('#edit-booking');
@@ -442,30 +442,14 @@ if (bookingForm) {
   const serviceOtherInput = document.querySelector('#booking-service-specify');
   const locationOtherField = document.querySelector('#booking-location-other');
   const locationOtherInput = document.querySelector('#booking-location-specify');
-  const selectedBookingFiles = [];
   const bookingStorage = window.bookingBrowserStorage;
-  const draftSaveStatus = document.querySelector('#booking-draft-save-status');
-  const draftNotice = document.querySelector('#booking-draft-notice');
-  const savedFormDraft = bookingStorage?.getDraft() || null;
-  let draftSaveTimer;
   let bookingSubmitted = false;
-  let restoringBookingDraft = false;
   let availabilityRequestId = 0;
   let tintOptionsRequest;
   let tintOptionsLoaded = false;
 
   const today = new Date();
   bookingDate.min = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('-');
-
-  const yearOptions = document.querySelector('#booking-year-options');
-  const bookingYear = document.querySelector('#booking-year');
-  const currentYear = today.getFullYear();
-  bookingYear.max = String(currentYear + 1);
-  for (let year = currentYear + 1; year >= 1950; year -= 1) {
-    const option = document.createElement('option');
-    option.value = String(year);
-    yearOptions.append(option);
-  }
 
   function bindConditionalDetails(select, field, input, shouldShow) {
     const updateField = () => {
@@ -595,7 +579,7 @@ if (bookingForm) {
           bookingTintOption.add(new Option(`${option.label} — ${money.format(option.amountNgn)}`, value));
         });
         tintOptionsLoaded = true;
-        const requestedTint = bookingQuery.get('tintOption') || savedFormDraft?.tintOption || '';
+        const requestedTint = bookingQuery.get('tintOption') || '';
         if (requestedTint && Object.hasOwn(options, requestedTint)) {
           bookingTintOption.value = requestedTint;
         } else if (requestedTint) {
@@ -650,69 +634,6 @@ if (bookingForm) {
   bindConditionalDetails(bookingService, serviceOtherField, serviceOtherInput, (value) => value === 'OTHER');
   bindConditionalDetails(bookingLocation, locationOtherField, locationOtherInput, (value) => value !== '' && value !== 'OUR_LOCATION');
 
-  function restoreBookingDraft() {
-    if (!savedFormDraft) return;
-    restoringBookingDraft = true;
-    Array.from(bookingForm.elements).forEach((field) => {
-      if (!field.name || field.type === 'file' || field.name === 'policyAccepted'
-        || !Object.prototype.hasOwnProperty.call(savedFormDraft, field.name)) return;
-      if (field.name === 'preferredTime') {
-        bookingTime.dataset.restoreValue = savedFormDraft[field.name];
-      } else if (field.type === 'checkbox') {
-        field.checked = savedFormDraft[field.name] === true;
-      } else if (typeof savedFormDraft[field.name] === 'string') {
-        field.value = savedFormDraft[field.name];
-      }
-    });
-    bookingService.dispatchEvent(new Event('change'));
-    bookingLocation.dispatchEvent(new Event('change'));
-    restoringBookingDraft = false;
-    draftNotice.textContent = 'Your unfinished booking was restored from this browser. Selected attachments must be chosen again, and policy acceptance is not saved.';
-    draftNotice.hidden = false;
-  }
-
-  function saveBookingDraft() {
-    if (restoringBookingDraft) return;
-    if (bookingSubmitted) return;
-    if (!bookingStorage) {
-      draftSaveStatus.textContent = 'This browser does not support saving an unfinished booking.';
-      return;
-    }
-    const draft = {};
-    Array.from(bookingForm.elements).forEach((field) => {
-      if (!field.name || field.type === 'file' || field.name === 'policyAccepted') return;
-      draft[field.name] = field.type === 'checkbox' ? field.checked : field.value;
-    });
-    const saved = bookingStorage.saveDraft(draft);
-    draftSaveStatus.textContent = saved
-      ? 'Your unfinished booking is saved on this device as you fill in the form.'
-      : 'This browser could not save your draft. Keep this page open or copy your details before leaving.';
-  }
-
-  restoreBookingDraft();
-  if (!bookingStorage || !bookingStorage.isAvailable()) {
-    draftSaveStatus.textContent = 'This browser blocks local storage, so an unfinished booking cannot be kept after you leave this page.';
-    document.querySelector('#booking-local-storage-note').textContent =
-      'This browser blocks local storage. Your details will not be remembered after you leave this page.';
-  }
-  window.addEventListener('booking:clear-local-data', () => {
-    window.clearTimeout(draftSaveTimer);
-    bookingForm.reset();
-    selectedBookingFiles.length = 0;
-    renderBookingFiles();
-    bookingService.dispatchEvent(new Event('change'));
-    bookingLocation.dispatchEvent(new Event('change'));
-    bookingPolicy?.dispatchEvent(new Event('change'));
-    draftNotice.hidden = true;
-    draftSaveStatus.textContent = 'Saved booking and draft details were cleared from this device.';
-  });
-  window.addEventListener('pagehide', saveBookingDraft);
-  bookingForm.addEventListener('input', () => {
-    window.clearTimeout(draftSaveTimer);
-    draftSaveTimer = window.setTimeout(saveBookingDraft, 250);
-  });
-  bookingForm.addEventListener('change', saveBookingDraft);
-
   if (bookingPolicyLink && bookingPolicyModal) {
     const openPolicyModal = () => {
       bookingPolicyModal.classList.add('is-open');
@@ -739,76 +660,28 @@ if (bookingForm) {
     syncBookingPolicyButton();
   }
 
-  function renderBookingFiles() {
-    bookingPreviews.replaceChildren();
-    selectedBookingFiles.forEach((file, index) => {
-      const item = document.createElement('li');
-      item.className = 'upload-preview-item';
-      const title = document.createElement('span');
-      title.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB`;
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'remove-upload';
-      remove.setAttribute('aria-label', `Remove ${file.name}`);
-      remove.textContent = 'Remove';
-      remove.addEventListener('click', () => {
-        selectedBookingFiles.splice(index, 1);
-        renderBookingFiles();
-      });
-      item.append(title, remove);
-      bookingPreviews.append(item);
-    });
-  }
-
-  bookingFiles.addEventListener('change', () => {
-    bookingError.hidden = true;
-    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime']);
-    const newFiles = Array.from(bookingFiles.files || []);
-    const invalid = newFiles.find((file) => !allowedTypes.has(file.type) || file.size > 15 * 1024 * 1024);
-    if (invalid) {
-      bookingError.textContent = 'Choose JPG, PNG, WebP, MP4 or MOV files up to 15 MB each.';
-      bookingError.hidden = false;
-      bookingFiles.value = '';
-      return;
-    }
-    if (selectedBookingFiles.length + newFiles.length > 6) {
-      bookingError.textContent = 'You can add up to 6 files.';
-      bookingError.hidden = false;
-      bookingFiles.value = '';
-      return;
-    }
-    selectedBookingFiles.push(...newFiles);
-    renderBookingFiles();
-    bookingFiles.value = '';
-  });
-
   bookingForm.addEventListener('submit', (event) => {
     event.preventDefault();
     if (tintSelectionLoadFailed) {
       bookingError.hidden = false;
       return;
     }
+    bookingWhatsapp.value = bookingPhone.value;
     postFormSubmission(
       bookingForm,
       bookingForm.querySelector('[type="submit"]'),
       bookingError,
       '/api/v1/bookings',
-      selectedBookingFiles,
+      [],
     ).then((result) => {
       if (!result) return;
       bookingSubmitted = true;
       const bookingReference = result.reference || result.id;
-      const remembered = bookingStorage?.rememberBooking(
+      bookingStorage?.rememberBooking(
         bookingReference,
         bookingForm.elements.namedItem('phone').value,
-      ) || false;
-      const draftCleared = bookingStorage?.clearDraft() || false;
-      draftSaveStatus.textContent = remembered
-        ? 'Your booking reference and phone number were saved on this device for quick status checks.'
-        : 'Your booking was received. Keep the reference below and phone number to check it again.';
-      if (!draftCleared) {
-        draftSaveStatus.textContent += ' The unfinished form draft could not be cleared from this browser.';
-      }
+      );
+      bookingStorage?.clearDraft();
       window.dispatchEvent(new CustomEvent('booking:remembered', {
         detail: {
           reference: bookingReference,
@@ -823,8 +696,6 @@ if (bookingForm) {
       document.querySelector('#booking-confirmation-message').textContent =
         `Your booking request has been received and is awaiting review.${selectedTint} ${result.attachmentCount ? `We stored ${result.attachmentCount} attachment${result.attachmentCount === 1 ? '' : 's'}.` : ''} Teo will contact you with the next steps. Payment alone does not confirm the appointment; final approval comes separately. ${notified ? 'Teo has been notified.' : 'Automatic notifications are not configured or could not be sent; message Teo on WhatsApp with this reference.'}`;
       document.querySelector('#booking-reference').textContent = `Booking reference: ${bookingReference}`;
-      const statusLink = document.querySelector('#check-booking-status');
-      statusLink.href = `booking-status.html?reference=${encodeURIComponent(bookingReference)}`;
       bookingLayout.hidden = true;
       bookingConfirmation.hidden = false;
       bookingConfirmation.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -853,7 +724,6 @@ if (bookingReturnForm) {
   const errorElement = document.querySelector('#booking-return-error');
   const resultSection = document.querySelector('#booking-return-result');
   const submitButton = document.querySelector('#booking-return-submit');
-  const clearButton = document.querySelector('#booking-clear-saved');
   const bookingApiBaseUrl = apiBaseUrl;
   const serviceLabels = {
     TINT: 'Tint / Glass Fortification',
@@ -912,13 +782,7 @@ if (bookingReturnForm) {
     resultSection.hidden = false;
   };
 
-  const latestBooking = storage?.getLatestBooking();
-  if (latestBooking) {
-    referenceInput.value = latestBooking.reference;
-    phoneInput.value = latestBooking.phone;
-    }
-
-    bookingReturnForm.addEventListener('submit', async (event) => {
+  bookingReturnForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     errorElement.hidden = true;
     resultSection.hidden = true;
@@ -933,12 +797,7 @@ if (bookingReturnForm) {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Could not check this booking.');
-      const remembered = storage?.rememberBooking(referenceInput.value, phoneInput.value) || false;
       renderStatus(result.booking);
-      if (!remembered) {
-        document.querySelector('#booking-local-storage-note').textContent =
-          'Booking status was checked, but this browser could not save its details for next time.';
-      }
     } catch (error) {
       errorElement.textContent = error instanceof TypeError
         ? 'Could not reach the booking service. Please try again or contact us on WhatsApp.'
@@ -948,28 +807,6 @@ if (bookingReturnForm) {
       submitButton.disabled = false;
       submitButton.textContent = 'Check status';
     }
-  });
-
-  window.addEventListener('booking:remembered', () => {
-    populateSavedBookings();
-    const latest = storage?.getLatestBooking();
-    if (latest) {
-      referenceInput.value = latest.reference;
-      phoneInput.value = latest.phone;
-    }
-  });
-
-  clearButton.addEventListener('click', () => {
-    const cleared = storage?.clearAll() || false;
-    window.dispatchEvent(new CustomEvent('booking:clear-local-data'));
-    referenceInput.value = '';
-    phoneInput.value = '';
-    errorElement.hidden = true;
-    resultSection.hidden = true;
-    document.querySelector('#booking-draft-notice').hidden = true;
-    document.querySelector('#booking-local-storage-note').textContent = cleared
-      ? 'Saved booking details were cleared from this browser.'
-      : 'This browser could not clear saved details. Clear this site’s storage through your browser settings.';
   });
 }
 

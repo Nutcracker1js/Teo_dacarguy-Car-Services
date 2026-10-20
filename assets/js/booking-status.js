@@ -43,15 +43,6 @@ if (statusForm) {
   const transactionReference = query.get('trxref')
     || (query.get('reference') && !/^(?:TD-|TEO-)/i.test(query.get('reference')) ? query.get('reference') : '');
   if (requestedReference) referenceInput.value = requestedReference;
-  const savedBooking = requestedReference
-    ? window.bookingBrowserStorage?.getBooking(requestedReference)
-    : window.bookingBrowserStorage?.getLatestBooking();
-  if (!requestedReference && savedBooking) referenceInput.value = savedBooking.reference;
-  if (savedBooking) statusForm.elements.namedItem('phone').value = savedBooking.phone;
-  if (savedBooking) {
-    document.querySelector('#booking-status-intro').textContent =
-      'Your latest booking details were restored from this browser. Refresh the status below to see the latest update.';
-  }
   if (transactionReference) {
     document.querySelector('#booking-status-intro').textContent =
       'Payment returned from Paystack. Check your booking to verify the payment and view its status.';
@@ -238,6 +229,4 @@ if (statusForm) {
     paymentUrl.searchParams.set('reference', referenceInput.value.trim());
     window.location.assign(paymentUrl.toString());
   });
-
-  if (savedBooking) statusForm.requestSubmit();
 }
