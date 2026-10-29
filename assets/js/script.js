@@ -565,6 +565,7 @@ if (bookingForm) {
   const bookingConfirmation = document.querySelector('#booking-confirmation');
   const editBooking = document.querySelector('#edit-booking');
   const bookingService = document.querySelector('#booking-service');
+  const bookingDetailingPrice = document.querySelector('#booking-detailing-price');
   const bookingLocation = document.querySelector('#booking-location');
   const bookingTintOption = document.querySelector('#booking-tint-option');
   const bookingTintSelection = document.querySelector('#booking-tint-selection');
@@ -675,6 +676,7 @@ if (bookingForm) {
   const inspectionInterstateOption = [...bookingLocation.options].find((option) => option.value === 'INTERSTATE');
   const updateInspectionLocations = () => {
     const inspectionSelected = bookingService.value === 'INSPECTION';
+    if (bookingDetailingPrice) bookingDetailingPrice.hidden = bookingService.value !== 'DETAILING';
     if (beninLocationOption) beninLocationOption.hidden = !inspectionSelected;
     if ((inspectionSelected && !['BENIN', 'INTERSTATE'].includes(bookingLocation.value))
       || (!inspectionSelected && bookingLocation.value === 'BENIN')) {

@@ -902,6 +902,30 @@ test('valid booking is saved with its requested service and date', async () => {
   assert.equal(savedBooking.values[3], '+234 809 876 5432');
 });
 
+test('detailing bookings are assigned the fixed ₦500 price', async () => {
+  const response = await fetch(`${baseUrl}/api/v1/bookings`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      fullName: 'Ada Customer',
+      phone: '+234 801 234 5678',
+      whatsapp: '+234 809 876 5432',
+      email: 'ada@example.test',
+      make: 'Toyota',
+      model: 'Camry',
+      service: 'DETAILING',
+      preferredDate: '2027-01-20',
+      preferredTime: '10:30',
+      location: 'OUR_LOCATION',
+      policyAccepted: true,
+    }),
+  });
+  assert.equal(response.status, 201);
+  const savedBooking = saved.filter((item) => item.sql.includes('INSERT INTO bookings')).at(-1);
+  assert.equal(savedBooking.values[8], 'DETAILING');
+  assert.equal(savedBooking.values[19], 500);
+});
+
 test('tint booking saves its selected option and server-priced amount', async () => {
   const response = await fetch(`${baseUrl}/api/v1/bookings`, {
     method: 'POST',

@@ -15,6 +15,7 @@ const LEGACY_TINT_PRICES = {
 };
 
 function getFixedServicePrice(service, serviceOption, location) {
+  if (service === 'DETAILING') return 500;
   if (service === 'INSPECTION') {
     if (location === 'BENIN') return 100000;
     if (location === 'INTERSTATE') return 200000;

@@ -445,6 +445,47 @@ test('inspection prices are enforced from the selected service location', async 
   };
 });
 
+test('detailing payments use the fixed ₦500 price', async () => {
+  currentService = {
+    service: 'DETAILING',
+    service_option: null,
+    location: 'OUR_LOCATION',
+    payment_status: 'UNPAID',
+    payment_verification: 'UNVERIFIED',
+    amount_received: '0',
+    amount_expected: null,
+    payment_reference: null,
+    refund_status: 'NONE',
+  };
+  const response = await request(`/bookings/${bookingId}/payment`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      paymentStatus: 'UNPAID',
+      amountExpected: 1,
+      amountReceived: 0,
+      reference: null,
+      verification: 'UNVERIFIED',
+      refundStatus: 'NONE',
+    }),
+  });
+  assert.equal(response.status, 200);
+  const update = queryLog.at(-1);
+  assert.ok(update.sql.includes('UPDATE bookings SET payment_status'));
+  assert.equal(update.values[1], 500);
+  currentService = {
+    service: 'MAINTENANCE',
+    service_option: null,
+    location: 'OUR_LOCATION',
+    payment_status: 'UNPAID',
+    payment_verification: 'UNVERIFIED',
+    amount_received: '0',
+    amount_expected: null,
+    payment_reference: null,
+    refund_status: 'NONE',
+  };
+});
+
 test('internal booking notes are saved privately', async () => {
   const response = await request(`/bookings/${bookingId}/notes`, {
     method: 'POST',
