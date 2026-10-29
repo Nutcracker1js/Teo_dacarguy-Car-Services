@@ -15,8 +15,8 @@ const SERVICES = [
   ['DETAILING', 'Detailing'],
   ['WRAPPING', 'Car wrapping'],
   ['TINT', 'Tint / glass fortification'],
+  ['INSPECTION', 'Vehicle inspection'],
   ['UPGRADES', 'Upgrades & modification'],
-  ['REGISTRATION', 'Registration'],
   ['OTHER', 'Other'],
 ];
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -390,6 +390,20 @@ function renderBookingDetails(result, feedback = null) {
     ['WhatsApp', booking.whatsapp],
   ]);
   const tintNames = {
+    'all-round-natural-black': 'All-Round Tint — Natural Black',
+    'front-doors-natural-black': 'Windshield + Two Front Doors — Natural Black',
+    'windshield-natural-black': 'Windshield Only — Natural Black',
+    'windshield-purple-chameleon': 'Windshield Only — Purple Chameleon',
+    'windshield-rose-red': 'Windshield Only — Rose Red',
+    'windshield-green-chameleon': 'Windshield Only — Green Chameleon',
+    'windshield-blue-chameleon': 'Windshield Only — Blue Chameleon',
+    'all-round': 'All round',
+    'windshield-front-doors': 'Windshield and two front doors',
+    'windshield-only': 'Windshield alone',
+    'purple-chameleon': 'Coloured windshield — Purple chameleon',
+    'rose-red': 'Coloured windshield — Rose red',
+    'green-chameleon': 'Coloured windshield — Green chameleon',
+    'blue-chameleon': 'Coloured windshield — Blue chameleon',
     'classic-smoke': 'Classic smoke / charcoal',
     'blue-green': 'Blue or green tint',
     'bronze-coloured': 'Bronze / coloured finish',
@@ -397,6 +411,7 @@ function renderBookingDetails(result, feedback = null) {
   };
   const locationNames = {
     OUR_LOCATION: 'At our location',
+    BENIN: 'Benin City',
     HOME_SERVICE: 'Home service visit',
     PICKUP: 'Vehicle pickup',
     INTERSTATE: 'Interstate travel',

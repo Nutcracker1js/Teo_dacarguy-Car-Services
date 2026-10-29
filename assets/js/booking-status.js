@@ -65,6 +65,7 @@ if (statusForm) {
   };
   const serviceLabels = {
     TINT: 'Tint / Glass Fortification',
+    INSPECTION: 'Vehicle Inspection',
     DETAILING: 'Car Detailing',
     MAINTENANCE: 'Maintenance & Repairs',
     WRAPPING: 'Car Wrapping',

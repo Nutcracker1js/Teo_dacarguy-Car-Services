@@ -6,7 +6,6 @@ const ENQUIRY_TYPES = new Set([
   'Parts',
   'Tint / Glass Fortification',
   'Car Wrapping',
-  'Registration',
   'Detailing',
   'Upgrades & Modification',
   'Other',
@@ -17,13 +16,14 @@ const BOOKING_SERVICES = new Set([
   'DETAILING',
   'WRAPPING',
   'TINT',
+  'INSPECTION',
   'UPGRADES',
-  'REGISTRATION',
   'OTHER',
 ]);
 
 const BOOKING_LOCATIONS = new Set([
   'OUR_LOCATION',
+  'BENIN',
   'HOME_SERVICE',
   'PICKUP',
   'INTERSTATE',
@@ -212,6 +212,13 @@ function validateBooking(payload) {
   }
   if (result.data.service === 'OTHER' && !result.data.serviceOther) {
     result.errors.serviceOther = 'Specify the service you need.';
+  }
+  if (result.data.service === 'TINT' && !result.data.tintOption) {
+    result.errors.tintOption = 'Choose a tint type and colour package.';
+  }
+  if (result.data.service === 'INSPECTION'
+    && !['BENIN', 'INTERSTATE'].includes(result.data.location)) {
+    result.errors.location = 'Choose Benin City or interstate for an inspection booking.';
   }
   if (result.data.tintOption && result.data.service !== 'TINT') {
     result.errors.tintOption = 'Tint options can only be selected for a tint service.';

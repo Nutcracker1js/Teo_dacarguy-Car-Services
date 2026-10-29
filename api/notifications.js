@@ -8,6 +8,7 @@ const BOOKING_SERVICE_LABELS = {
   DETAILING: 'Detailing',
   WRAPPING: 'Car Wrapping',
   TINT: 'Tint / Glass Fortification',
+  INSPECTION: 'Vehicle Inspection',
   UPGRADES: 'Upgrades & Modification',
   REGISTRATION: 'Registration',
   OTHER: 'Other',

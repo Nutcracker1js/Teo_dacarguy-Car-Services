@@ -4,6 +4,142 @@ const dropdownTrigger = document.querySelector('.dropdown-trigger');
 const dropdownMenu = document.querySelector('#services-menu');
 const siteHeader = document.querySelector('.site-header');
 
+const tintPackageBuilder = document.querySelector('#tint-package-builder');
+
+if (tintPackageBuilder) {
+  const typeButtons = [...tintPackageBuilder.querySelectorAll('[data-tint-type]')];
+  const colourButtons = [...tintPackageBuilder.querySelectorAll('[data-tint-colour]')];
+  const colourStep = tintPackageBuilder.querySelector('#tint-colour-step');
+  const viewPricingButton = tintPackageBuilder.querySelector('#tint-view-pricing');
+  const changeSelectionButton = tintPackageBuilder.querySelector('#tint-change-selection');
+  const summary = tintPackageBuilder.querySelector('#tint-pricing-summary');
+  const errorMessage = tintPackageBuilder.querySelector('#tint-builder-error');
+  const typeSummary = tintPackageBuilder.querySelector('#tint-summary-type');
+  const colourSummary = tintPackageBuilder.querySelector('#tint-summary-colour');
+  const totalLabel = tintPackageBuilder.querySelector('#tint-summary-total-label');
+  const priceSummary = tintPackageBuilder.querySelector('#tint-summary-price');
+  const summaryNote = tintPackageBuilder.querySelector('#tint-summary-note');
+  const bookPackageLink = tintPackageBuilder.querySelector('#tint-book-package');
+  const typeLabels = {
+    'all-round': 'All-Round Tint',
+    'front-doors': 'Windshield + Two Front Doors',
+    windshield: 'Windshield Only',
+  };
+  const colourLabels = {
+    'natural-black': 'Natural Black',
+    'purple-chameleon': 'Purple Chameleon',
+    'rose-red': 'Rose Red',
+    'green-chameleon': 'Green Chameleon',
+    'blue-chameleon': 'Blue Chameleon',
+  };
+  let selectedType = '';
+  let selectedColour = '';
+  let configuredPrices = null;
+  let configurationError = null;
+
+  const pricingRequest = fetch(new URL(tintPackageBuilder.dataset.pricingUrl, window.location.href))
+    .then((response) => {
+      if (!response.ok) throw new Error('Could not load confirmed tint prices.');
+      return response.json();
+    })
+    .then((prices) => {
+      if (!prices || typeof prices !== 'object' || Array.isArray(prices)
+        || !Object.entries(prices).length
+        || Object.entries(prices).some(([, option]) => (
+          !option || typeof option.label !== 'string'
+          || !Number.isSafeInteger(option.amountNgn) || option.amountNgn <= 0
+        ))) {
+        throw new Error('Confirmed tint prices are unavailable. Please contact Teo for assistance.');
+      }
+      configuredPrices = prices;
+      viewPricingButton.disabled = !(selectedType && selectedColour);
+    })
+    .catch((error) => {
+      configurationError = error;
+      errorMessage.textContent = error.message;
+      errorMessage.hidden = false;
+      viewPricingButton.disabled = true;
+    });
+
+  const clearSummary = () => {
+    summary.hidden = true;
+    changeSelectionButton.hidden = true;
+    totalLabel.hidden = true;
+    priceSummary.textContent = '';
+    summaryNote.textContent = '';
+    bookPackageLink.hidden = true;
+    bookPackageLink.removeAttribute('href');
+  };
+
+  const updateViewButton = () => {
+    viewPricingButton.disabled = !(selectedType && selectedColour && configuredPrices);
+  };
+
+  typeButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedType = button.dataset.tintType;
+      selectedColour = '';
+      typeButtons.forEach((option) => option.setAttribute('aria-pressed', String(option === button)));
+      colourButtons.forEach((option) => option.setAttribute('aria-pressed', 'false'));
+      colourStep.hidden = false;
+      errorMessage.hidden = Boolean(configurationError);
+      clearSummary();
+      updateViewButton();
+    });
+  });
+
+  colourButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      if (!selectedType) return;
+      selectedColour = button.dataset.tintColour;
+      colourButtons.forEach((option) => option.setAttribute('aria-pressed', String(option === button)));
+      errorMessage.hidden = Boolean(configurationError);
+      clearSummary();
+      updateViewButton();
+    });
+  });
+
+  viewPricingButton.addEventListener('click', async () => {
+    if (!selectedType || !selectedColour) return;
+    clearSummary();
+    if (!configuredPrices) await pricingRequest;
+    if (configurationError || !configuredPrices) return;
+    const optionKey = `${selectedType}-${selectedColour}`;
+    const configuredPackage = configuredPrices[optionKey];
+    typeSummary.textContent = typeLabels[selectedType];
+    colourSummary.textContent = colourLabels[selectedColour];
+    if (configuredPackage) {
+      const money = new Intl.NumberFormat('en-NG', {
+        style: 'currency',
+        currency: 'NGN',
+        maximumFractionDigits: 0,
+      });
+      totalLabel.hidden = false;
+      priceSummary.textContent = money.format(configuredPackage.amountNgn);
+      summaryNote.textContent = 'This confirmed price is saved to your booking and used to prepare your payment link after Teo accepts your request.';
+      bookPackageLink.href = `booking.html?service=TINT&tintOption=${encodeURIComponent(optionKey)}`;
+      bookPackageLink.hidden = false;
+    } else {
+      priceSummary.textContent = 'Price not yet configured';
+      summaryNote.textContent = 'We do not yet have a confirmed price for this type and colour combination. Please contact Teo for a quote.';
+    }
+    summary.hidden = false;
+    changeSelectionButton.hidden = false;
+  });
+
+  changeSelectionButton.addEventListener('click', () => {
+    selectedType = '';
+    selectedColour = '';
+    typeButtons.forEach((button) => button.setAttribute('aria-pressed', 'false'));
+    colourButtons.forEach((button) => button.setAttribute('aria-pressed', 'false'));
+    colourStep.hidden = true;
+    errorMessage.hidden = Boolean(configurationError);
+    clearSummary();
+    updateViewButton();
+    typeButtons[0]?.focus();
+  });
+}
+
 function updateHeaderOnScroll() {
   if (!siteHeader) return;
   siteHeader.classList.toggle('is-scrolled', window.scrollY > 40);
@@ -535,6 +671,27 @@ if (bookingForm) {
 
   bookingDate.addEventListener('change', loadAvailableBookingTimes);
   bookingService.addEventListener('change', loadAvailableBookingTimes);
+  const beninLocationOption = [...bookingLocation.options].find((option) => option.value === 'BENIN');
+  const inspectionInterstateOption = [...bookingLocation.options].find((option) => option.value === 'INTERSTATE');
+  const updateInspectionLocations = () => {
+    const inspectionSelected = bookingService.value === 'INSPECTION';
+    if (beninLocationOption) beninLocationOption.hidden = !inspectionSelected;
+    if ((inspectionSelected && !['BENIN', 'INTERSTATE'].includes(bookingLocation.value))
+      || (!inspectionSelected && bookingLocation.value === 'BENIN')) {
+      bookingLocation.value = '';
+    }
+    [...bookingLocation.options].forEach((option) => {
+      if (!option.value || option.value === 'BENIN' || option.value === 'INTERSTATE') return;
+      option.disabled = inspectionSelected;
+    });
+    if (inspectionInterstateOption) {
+      inspectionInterstateOption.textContent = inspectionSelected
+        ? 'Interstate travel — vehicle inspection (₦200,000)'
+        : 'Interstate travel';
+    }
+  };
+  bookingService.addEventListener('change', updateInspectionLocations);
+  updateInspectionLocations();
   const updateTintSelection = () => {
     const isTintService = bookingService.value === 'TINT';
     bookingTintSelection.hidden = !isTintService;
@@ -617,8 +774,9 @@ if (bookingForm) {
   });
   const bookingQuery = new URLSearchParams(window.location.search);
   let tintSelectionLoadFailed = false;
-  if (bookingQuery.get('service') === 'TINT') {
-    bookingService.value = 'TINT';
+  if ([...bookingService.options].some((option) => option.value === bookingQuery.get('service'))) {
+    bookingService.value = bookingQuery.get('service');
+    updateInspectionLocations();
   }
   bookingTintOption.disabled = bookingService.value !== 'TINT';
   updateTintSelection();
@@ -727,6 +885,7 @@ if (bookingReturnForm) {
   const bookingApiBaseUrl = apiBaseUrl;
   const serviceLabels = {
     TINT: 'Tint / Glass Fortification',
+    INSPECTION: 'Vehicle Inspection',
     DETAILING: 'Car Detailing',
     MAINTENANCE: 'Maintenance & Repairs',
     WRAPPING: 'Car Wrapping',

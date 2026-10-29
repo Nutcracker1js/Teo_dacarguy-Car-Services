@@ -914,7 +914,7 @@ test('tint booking saves its selected option and server-priced amount', async ()
       make: 'Toyota',
       model: 'Camry',
       service: 'TINT',
-      tintOption: 'ceramic',
+      tintOption: 'windshield-rose-red',
       preferredDate: '2027-01-20',
       preferredTime: '11:00',
       location: 'OUR_LOCATION',
@@ -925,10 +925,10 @@ test('tint booking saves its selected option and server-priced amount', async ()
   assert.equal(response.status, 201);
   assert.match(result.reference, /^TEO-\d+$/);
   const savedBooking = saved.filter((item) => item.sql.includes('INSERT INTO bookings')).at(-1);
-  assert.equal(savedBooking.values[18], 'ceramic');
-  assert.equal(savedBooking.values[19], 100);
-  assert.match(savedBooking.values[14], /Ceramic colour options/);
-  assert.match(savedBooking.values[14], /₦100/);
+  assert.equal(savedBooking.values[18], 'windshield-rose-red');
+  assert.equal(savedBooking.values[19], 220000);
+  assert.match(savedBooking.values[14], /Windshield Only — Rose Red/);
+  assert.match(savedBooking.values[14], /₦220,000/);
   assert.match(savedBooking.values[14], /payment is due only after booking approval/i);
 });
 
@@ -956,9 +956,104 @@ test('booking rejects unknown tint options and tint options on other services', 
   const wrongService = await fetch(`${baseUrl}/api/v1/bookings`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...baseBooking, service: 'DETAILING', tintOption: 'ceramic' }),
+    body: JSON.stringify({ ...baseBooking, service: 'DETAILING', tintOption: 'windshield-rose-red' }),
   });
   assert.equal(wrongService.status, 400);
+
+  const configuredCombination = await fetch(`${baseUrl}/api/v1/bookings`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...baseBooking, tintOption: 'all-round-purple-chameleon' }),
+  });
+  assert.equal(configuredCombination.status, 201);
+  const configuredBooking = saved.filter((item) => item.sql.includes('INSERT INTO bookings')).at(-1);
+  assert.equal(configuredBooking.values[18], 'all-round-purple-chameleon');
+  assert.equal(configuredBooking.values[19], 350000);
+
+  const missingTintOption = await fetch(`${baseUrl}/api/v1/bookings`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(baseBooking),
+  });
+  assert.equal(missingTintOption.status, 400);
+});
+
+test('all configured tint colour surcharges are reflected in booking totals', async () => {
+  const prices = require('../tint-options.json');
+  const { getFixedServicePrice } = require('./pricing');
+  const expectedPrices = {
+    'all-round-natural-black': 300000,
+    'all-round-purple-chameleon': 350000,
+    'all-round-rose-red': 370000,
+    'all-round-green-chameleon': 350000,
+    'all-round-blue-chameleon': 350000,
+    'front-doors-natural-black': 200000,
+    'front-doors-purple-chameleon': 250000,
+    'front-doors-rose-red': 270000,
+    'front-doors-green-chameleon': 250000,
+    'front-doors-blue-chameleon': 250000,
+    'windshield-natural-black': 150000,
+    'windshield-purple-chameleon': 200000,
+    'windshield-rose-red': 220000,
+    'windshield-green-chameleon': 200000,
+    'windshield-blue-chameleon': 200000,
+  };
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(prices).map(([key, option]) => [key, option.amountNgn])),
+    expectedPrices,
+  );
+  for (const [option, amount] of Object.entries(expectedPrices)) {
+    assert.equal(getFixedServicePrice('TINT', option), amount);
+  }
+});
+
+test('inspection bookings use fixed Benin City and interstate prices', async () => {
+  const inspectionBooking = {
+    fullName: 'Ada Customer',
+    phone: '+234 801 234 5678',
+    whatsapp: '+234 809 876 5432',
+    email: 'ada@example.test',
+    make: 'Toyota',
+    model: 'Camry',
+    service: 'INSPECTION',
+    preferredDate: '2027-01-20',
+    preferredTime: '11:00',
+    locationOther: 'Vehicle address supplied by customer',
+    policyAccepted: true,
+  };
+  for (const [location, expectedPrice] of [['BENIN', 100000], ['INTERSTATE', 200000]]) {
+    const response = await fetch(`${baseUrl}/api/v1/bookings`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...inspectionBooking, location }),
+    });
+    assert.equal(response.status, 201);
+    const savedBooking = saved.filter((item) => item.sql.includes('INSERT INTO bookings')).at(-1);
+    assert.equal(savedBooking.values[8], 'INSPECTION');
+    assert.equal(savedBooking.values[12], location);
+    assert.equal(savedBooking.values[19], expectedPrice);
+  }
+});
+
+test('inspection bookings reject locations without a confirmed inspection price', async () => {
+  const response = await fetch(`${baseUrl}/api/v1/bookings`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      fullName: 'Ada Customer',
+      phone: '+234 801 234 5678',
+      whatsapp: '+234 809 876 5432',
+      email: 'ada@example.test',
+      make: 'Toyota',
+      model: 'Camry',
+      service: 'INSPECTION',
+      preferredDate: '2027-01-20',
+      preferredTime: '11:00',
+      location: 'OUR_LOCATION',
+      policyAccepted: true,
+    }),
+  });
+  assert.equal(response.status, 400);
 });
 
 test('unknown fields and malformed JSON are rejected', async () => {

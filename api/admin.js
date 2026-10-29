@@ -43,7 +43,7 @@ async function ensureApprovalCheckout(pool, booking, publicSiteUrl) {
   if (booking.payment_status === 'PAID') {
     return { status: 'failed', error: 'Payment is already recorded; no payment link was sent.' };
   }
-  const fixedPrice = getFixedServicePrice(booking.service, booking.service_option);
+  const fixedPrice = getFixedServicePrice(booking.service, booking.service_option, booking.location);
   const amountExpected = fixedPrice ?? Number(booking.amount_expected);
   if (!Number.isFinite(amountExpected) || amountExpected <= 0) {
     return { status: 'failed', error: 'Save the confirmed payment amount before sending the acceptance message.' };
@@ -309,7 +309,11 @@ function createAdminRouter({
       return;
     }
     const bookingDetails = booking.rows[0];
-    bookingDetails.fixed_price = getFixedServicePrice(bookingDetails.service, bookingDetails.service_option);
+    bookingDetails.fixed_price = getFixedServicePrice(
+      bookingDetails.service,
+      bookingDetails.service_option,
+      bookingDetails.location,
+    );
     response.json({
       booking: bookingDetails,
       paymentDocuments: paymentDocuments.rows,
@@ -480,7 +484,7 @@ function createAdminRouter({
     });
     if (result.httpStatus === 200 && result.body.status === 'APPROVED') {
       const bookingResult = await pool.query(
-        `SELECT id, reference, full_name, phone, whatsapp, email, service, service_other,
+        `SELECT id, reference, full_name, phone, whatsapp, email, service, service_other, location,
           service_option, preferred_date::text AS preferred_date, to_char(preferred_time, 'HH24:MI') AS preferred_time,
           amount_expected, payment_status, payment_reference, payment_checkout_url, payment_expires_at
          FROM bookings WHERE id = $1`,
@@ -565,7 +569,7 @@ function createAdminRouter({
       return;
     }
     const bookingResult = await pool.query(
-      `SELECT id, reference, full_name, phone, whatsapp, email, service, service_other,
+      `SELECT id, reference, full_name, phone, whatsapp, email, service, service_other, location,
         service_option, status, preferred_date::text AS preferred_date,
         to_char(preferred_time, 'HH24:MI') AS preferred_time,
         amount_expected, payment_status, payment_reference, payment_checkout_url, payment_expires_at
@@ -633,7 +637,7 @@ function createAdminRouter({
       return;
     }
     const currentBooking = await pool.query(
-      `SELECT service, service_option, payment_status, payment_verification,
+      `SELECT service, service_option, location, payment_status, payment_verification,
         amount_received, amount_expected, payment_reference, refund_status
        FROM bookings WHERE id = $1`,
       [request.params.id],
@@ -648,7 +652,7 @@ function createAdminRouter({
       response.status(409).json({ error: 'A payment can be marked paid only after Paystack verifies it.' });
       return;
     }
-    const fixedPrice = getFixedServicePrice(existing.service, existing.service_option);
+    const fixedPrice = getFixedServicePrice(existing.service, existing.service_option, existing.location);
     const expectedAmount = fixedPrice ?? amountExpected ?? null;
     const priceChanged = Number(existing.amount_expected || 0) !== Number(expectedAmount || 0);
     const allowedPaymentStatusChange = ['PAID', 'REFUND_PENDING'].includes(existing.payment_status)
@@ -1404,7 +1408,7 @@ function createCombinedSubmissionQuery(type) {
 
 async function getConfirmedPaymentLink(pool, bookingId, publicSiteUrl) {
   const result = await pool.query(
-    `SELECT id, reference, email, service, service_option, payment_status,
+    `SELECT id, reference, email, service, service_option, location, payment_status,
       amount_expected, payment_reference, payment_checkout_url
      FROM bookings WHERE id = $1`,
     [bookingId],

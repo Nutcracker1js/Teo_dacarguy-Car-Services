@@ -673,7 +673,7 @@ function createApp({
           data.policyAccepted === true, 'Booking, Cancellation & Refund Policy v1',
           data.email,
           data.tintOption,
-          getFixedServicePrice(data.service, data.tintOption),
+          getFixedServicePrice(data.service, data.tintOption, data.location),
           new Date(Date.now() + bookingReviewTtlHours * 60 * 60 * 1000),
         ],
       }),

@@ -1,18 +1,62 @@
 {
-  "classic-smoke": {
-    "label": "Classic smoke / charcoal",
-    "amountNgn": 50
+  "all-round-natural-black": {
+    "label": "All-Round Tint — Natural Black",
+    "amountNgn": 300000
   },
-  "blue-green": {
-    "label": "Blue or green tint",
-    "amountNgn": 65
+  "all-round-purple-chameleon": {
+    "label": "All-Round Tint — Purple Chameleon",
+    "amountNgn": 350000
   },
-  "bronze-coloured": {
-    "label": "Bronze / coloured finish",
-    "amountNgn": 80
+  "all-round-rose-red": {
+    "label": "All-Round Tint — Rose Red",
+    "amountNgn": 370000
   },
-  "ceramic": {
-    "label": "Ceramic colour options",
-    "amountNgn": 100
+  "all-round-green-chameleon": {
+    "label": "All-Round Tint — Green Chameleon",
+    "amountNgn": 350000
+  },
+  "all-round-blue-chameleon": {
+    "label": "All-Round Tint — Blue Chameleon",
+    "amountNgn": 350000
+  },
+  "front-doors-natural-black": {
+    "label": "Windshield + Two Front Doors — Natural Black",
+    "amountNgn": 200000
+  },
+  "front-doors-purple-chameleon": {
+    "label": "Windshield + Two Front Doors — Purple Chameleon",
+    "amountNgn": 250000
+  },
+  "front-doors-rose-red": {
+    "label": "Windshield + Two Front Doors — Rose Red",
+    "amountNgn": 270000
+  },
+  "front-doors-green-chameleon": {
+    "label": "Windshield + Two Front Doors — Green Chameleon",
+    "amountNgn": 250000
+  },
+  "front-doors-blue-chameleon": {
+    "label": "Windshield + Two Front Doors — Blue Chameleon",
+    "amountNgn": 250000
+  },
+  "windshield-natural-black": {
+    "label": "Windshield Only — Natural Black",
+    "amountNgn": 150000
+  },
+  "windshield-purple-chameleon": {
+    "label": "Windshield Only — Purple Chameleon",
+    "amountNgn": 200000
+  },
+  "windshield-rose-red": {
+    "label": "Windshield Only — Rose Red",
+    "amountNgn": 220000
+  },
+  "windshield-green-chameleon": {
+    "label": "Windshield Only — Green Chameleon",
+    "amountNgn": 200000
+  },
+  "windshield-blue-chameleon": {
+    "label": "Windshield Only — Blue Chameleon",
+    "amountNgn": 200000
   }
 }

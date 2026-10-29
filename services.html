@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/png" href="images/favicon.png" />
     <meta name="theme-color" content="#090909" />
     <meta
       name="description"
@@ -146,6 +147,7 @@
               <li><a href="#maintenance">Maintenance &amp; Repairs</a></li>
               <li><a href="#detailing">Car Detailing</a></li>
               <li><a href="#tint">Tint / Glass Fortification</a></li>
+              <li><a href="#inspection">Vehicle Inspection</a></li>
             </ul>
           </article>
           <article class="category-row">
@@ -164,14 +166,14 @@
             <div class="category-intro">
               <h3>Vehicle Services</h3>
               <p>
-                Everything involved in getting, registering and managing a
-                vehicle.
+                Vehicle sourcing, sales and inspection to support your next
+                purchase.
               </p>
             </div>
             <ul>
               <li><a href="#sales">Vehicle Sales &amp; Sourcing</a></li>
               <li><a href="#preorder">Car Preorder</a></li>
-              <li><a href="#registration">Car Registration</a></li>
+              <li><a href="#inspection">Vehicle Inspection</a></li>
             </ul>
           </article>
           <article class="category-row">
@@ -392,47 +394,75 @@
           >
             <div class="tinting-prices-heading">
               <div>
-                <p class="catalogue-kicker">PRICES</p>
-                <h3 id="tinting-prices-title">Tint price list</h3>
+                <p class="catalogue-kicker">YOUR TINT, YOUR FINISH</p>
+                <h3 id="tinting-prices-title">Build your tint package</h3>
+                <p class="tinting-selector-intro">Choose your window coverage first, then select a colour to see whether a confirmed price is available for that combination.</p>
               </div>
-              <span>₦ NGN</span>
             </div>
-            <dl class="tinting-price-list">
-              <div>
-                <dt>Classic smoke / charcoal</dt>
-                <dd>
-                  ₦50
-                  <a class="tint-option-action" href="booking.html?service=TINT&amp;tintOption=classic-smoke">Request this tint</a>
-                </dd>
+            <div class="tint-package-builder" id="tint-package-builder" data-pricing-url="tint-options.json">
+              <fieldset class="tint-choice-step">
+                <legend><span>01</span> Select tint type</legend>
+                <div class="tint-type-options" role="group" aria-label="Tint coverage">
+                  <button class="tint-type-card" type="button" data-tint-type="all-round" aria-pressed="false">
+                    <span class="tint-card-index">01 / COVERAGE</span>
+                    <strong>All-Round Tint</strong>
+                    <span>Tinting for all vehicle windows.</span>
+                  </button>
+                  <button class="tint-type-card" type="button" data-tint-type="front-doors" aria-pressed="false">
+                    <span class="tint-card-index">02 / COVERAGE</span>
+                    <strong>Windshield + Two Front Doors</strong>
+                    <span>Front windshield and both front door windows.</span>
+                  </button>
+                  <button class="tint-type-card" type="button" data-tint-type="windshield" aria-pressed="false">
+                    <span class="tint-card-index">03 / COVERAGE</span>
+                    <strong>Windshield Only</strong>
+                    <span>Front windshield only.</span>
+                  </button>
+                </div>
+              </fieldset>
+              <fieldset class="tint-choice-step tint-colour-step" id="tint-colour-step" hidden>
+                <legend><span>02</span> Select tint colour</legend>
+                <div class="tint-colour-options" role="group" aria-label="Tint colour">
+                  <button class="tint-colour-card" type="button" data-tint-colour="natural-black" aria-pressed="false">
+                    <span class="tint-colour-swatch swatch-natural-black" aria-hidden="true"></span>
+                    <span>Natural Black</span>
+                  </button>
+                  <button class="tint-colour-card" type="button" data-tint-colour="purple-chameleon" aria-pressed="false">
+                    <span class="tint-colour-swatch swatch-purple" aria-hidden="true"></span>
+                    <span>Purple Chameleon</span>
+                  </button>
+                  <button class="tint-colour-card" type="button" data-tint-colour="rose-red" aria-pressed="false">
+                    <span class="tint-colour-swatch swatch-rose" aria-hidden="true"></span>
+                    <span>Rose Red</span>
+                  </button>
+                  <button class="tint-colour-card" type="button" data-tint-colour="green-chameleon" aria-pressed="false">
+                    <span class="tint-colour-swatch swatch-green" aria-hidden="true"></span>
+                    <span>Green Chameleon</span>
+                  </button>
+                  <button class="tint-colour-card" type="button" data-tint-colour="blue-chameleon" aria-pressed="false">
+                    <span class="tint-colour-swatch swatch-blue" aria-hidden="true"></span>
+                    <span>Blue Chameleon</span>
+                  </button>
+                </div>
+              </fieldset>
+              <p class="tint-builder-error" id="tint-builder-error" role="alert" hidden></p>
+              <div class="tint-pricing-actions">
+                <button class="tint-view-pricing" id="tint-view-pricing" type="button" disabled>View Pricing</button>
+                <button class="tint-change-selection" id="tint-change-selection" type="button" hidden>Change selection</button>
               </div>
-              <div>
-                <dt>Blue or green tint</dt>
-                <dd>
-                  ₦65
-                  <a class="tint-option-action" href="booking.html?service=TINT&amp;tintOption=blue-green">Request this tint</a>
-                </dd>
-              </div>
-              <div>
-                <dt>Bronze / coloured finish</dt>
-                <dd>
-                  ₦80
-                  <a class="tint-option-action" href="booking.html?service=TINT&amp;tintOption=bronze-coloured">Request this tint</a>
-                </dd>
-              </div>
-              <div>
-                <dt>Ceramic colour options</dt>
-                <dd>
-                  ₦100
-                  <a class="tint-option-action" href="booking.html?service=TINT&amp;tintOption=ceramic">Request this tint</a>
-                </dd>
-              </div>
-            </dl>
-            <p class="tinting-note">
-              The price shown is attached to the tint option you select. It is
-              saved to your booking and used to prepare your Paystack payment
-              link after Teo accepts your request.
-            </p>
-
+              <section class="tint-pricing-summary" id="tint-pricing-summary" aria-live="polite" hidden>
+                <p class="catalogue-kicker">YOUR SELECTED PACKAGE</p>
+                <dl>
+                  <div><dt>Tint type</dt><dd id="tint-summary-type"></dd></div>
+                  <div><dt>Tint colour</dt><dd id="tint-summary-colour"></dd></div>
+                </dl>
+                <p class="catalogue-kicker tint-summary-total-label" id="tint-summary-total-label" hidden>TOTAL PRICE</p>
+                <p class="tint-summary-price" id="tint-summary-price"></p>
+                <p class="tinting-note" id="tint-summary-note"></p>
+                <a class="tint-book-package" id="tint-book-package" href="booking.html?service=TINT" hidden>Book This Package</a>
+              </section>
+              <p class="tinting-note tint-builder-footnote">For coloured packages without a configured price, please contact Teo for a confirmed quote. Prices are shown only for confirmed combinations.</p>
+            </div>
           </section>
         </div>
       </section>
@@ -556,23 +586,6 @@
               >
             </div>
           </article>
-          <article class="service-accordion" id="registration">
-            <h3 class="service-accordion-title">Car Registration</h3>
-            <div class="accordion-content">
-              <h3>What's included</h3>
-              <ul>
-                <li>Registration requirements review</li>
-                <li>Document checklist guidance</li>
-                <li>Process coordination</li>
-                <li>Updates on the next steps</li>
-              </ul>
-              <a
-                class="catalogue-link"
-                href="booking.html"
-                >Book this service</a
-              >
-            </div>
-          </article>
           <article class="service-accordion" id="detailing">
             <h3 class="service-accordion-title">Car Detailing</h3>
             <div class="accordion-content">
@@ -587,6 +600,22 @@
                 class="catalogue-link"
                 href="booking.html"
                 >Book this service</a
+              >
+            </div>
+          </article>
+          <article class="service-accordion" id="inspection">
+            <h3 class="service-accordion-title">Vehicle Inspection</h3>
+            <div class="accordion-content">
+              <h3>Inspection pricing</h3>
+              <ul>
+                <li>Benin City — ₦100,000</li>
+                <li>Interstate — ₦200,000</li>
+                <li>Provide the vehicle location when requesting an inspection.</li>
+              </ul>
+              <a
+                class="catalogue-link"
+                href="booking.html?service=INSPECTION"
+                >Book an inspection</a
               >
             </div>
           </article>

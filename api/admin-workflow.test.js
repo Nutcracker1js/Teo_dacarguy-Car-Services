@@ -14,6 +14,7 @@ let currentPaymentStatus = 'UNPAID';
 let currentService = {
   service: 'MAINTENANCE',
   service_option: null,
+  location: 'OUR_LOCATION',
   payment_status: 'UNPAID',
   payment_verification: 'UNVERIFIED',
   amount_received: '0',
@@ -60,7 +61,7 @@ const pool = {
         rows: [{ id: bookingId, payment_status: values[0], amount_expected: values[1], amount_received: values[2] }],
       };
     }
-    if (sql.includes('SELECT service, service_option, payment_status')) {
+    if (sql.includes('SELECT service, service_option, location, payment_status')) {
       return { rowCount: 1, rows: [currentService] };
     }
     if (sql.replace(/\s+/g, ' ').includes('SELECT id, reference, full_name, phone, whatsapp, email, service, service_other')) {
@@ -75,6 +76,7 @@ const pool = {
           email: 'ada@example.test',
           service: 'TINT',
           service_option: 'classic-smoke',
+          location: 'OUR_LOCATION',
           service_other: null,
           preferred_date: '2027-01-20',
           preferred_time: '10:30',
@@ -366,7 +368,7 @@ test('admin cannot manually mark a payment as paid or verified', async () => {
 test('fixed tint prices are enforced by the server on payment updates', async () => {
   currentService = {
     service: 'TINT',
-    service_option: 'ceramic',
+    service_option: 'windshield-rose-red',
     payment_status: 'UNPAID',
     payment_verification: 'UNVERIFIED',
     amount_received: '0',
@@ -389,10 +391,51 @@ test('fixed tint prices are enforced by the server on payment updates', async ()
   assert.equal(response.status, 200);
   const update = queryLog.at(-1);
   assert.ok(update.sql.includes('UPDATE bookings SET payment_status'));
-  assert.equal(update.values[1], 100);
+  assert.equal(update.values[1], 220000);
   currentService = {
     service: 'MAINTENANCE',
     service_option: null,
+    payment_status: 'UNPAID',
+    payment_verification: 'UNVERIFIED',
+    amount_received: '0',
+    amount_expected: null,
+    payment_reference: null,
+    refund_status: 'NONE',
+  };
+});
+
+test('inspection prices are enforced from the selected service location', async () => {
+  currentService = {
+    service: 'INSPECTION',
+    service_option: null,
+    location: 'INTERSTATE',
+    payment_status: 'UNPAID',
+    payment_verification: 'UNVERIFIED',
+    amount_received: '0',
+    amount_expected: null,
+    payment_reference: null,
+    refund_status: 'NONE',
+  };
+  const response = await request(`/bookings/${bookingId}/payment`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      paymentStatus: 'UNPAID',
+      amountExpected: 1,
+      amountReceived: 0,
+      reference: null,
+      verification: 'UNVERIFIED',
+      refundStatus: 'NONE',
+    }),
+  });
+  assert.equal(response.status, 200);
+  const update = queryLog.at(-1);
+  assert.ok(update.sql.includes('UPDATE bookings SET payment_status'));
+  assert.equal(update.values[1], 200000);
+  currentService = {
+    service: 'MAINTENANCE',
+    service_option: null,
+    location: 'OUR_LOCATION',
     payment_status: 'UNPAID',
     payment_verification: 'UNVERIFIED',
     amount_received: '0',
